@@ -27,11 +27,13 @@ Copy the skill aside as the **before** version. Measure tokens for the `descript
 
 List every consumer of each file: skills that link it, code that embeds it, tests that assert its text. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives.
 
+Ask the owner which hosts and setups they still use; sections for dropped ones go.
+
 **Done when** the numbers and consumers are recorded.
 
 ### 2. Branch on tools
 
-If the skill teaches an agent to call a tool (a CLI, API, SDK, MCP server or native tool), read [tool-skills.md](references/tool-skills.md) now and do its steps before step 3.
+If the skill teaches an agent to call a tool (a CLI, API, SDK, MCP server, native tool, or a script the skill ships), read [tool-skills.md](references/tool-skills.md) now and do its steps before step 3.
 
 **Done when** the tool steps are finished, or the skill teaches no tool.
 
@@ -58,7 +60,13 @@ Sort every piece by the runs that need it. What every run needs stays in `SKILL.
 
 - **Tokens**: before and after, per rung.
 - **Behavior**: observed before/after runs, per [eval.md](references/eval.md).
+- **Rules**: a fresh reviewer confirms each behavior rule in **before** still has a home; the eval covers only your tasks.
+- **Links**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs links <skill-dir>` passes.
 
 Ship when the slim skill matches or beats the old one on task success. When it misses, the logs show where the agent went wrong: move the missing piece up a rung before adding prose back.
 
 **Done when** the eval passes. Report tokens per rung before and after, the eval table, and what moved to which rung.
+
+## After the diet
+
+Fold anything this run showed was wrong, missing or slow in these steps into this skill with the `skill-update` skill.

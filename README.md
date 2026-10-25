@@ -64,13 +64,14 @@ git clone https://github.com/nicobailon/skill-diet ~/.pi/agent/skills/skill-diet
 
 ```
 skill-diet/
-├── SKILL.md              the five steps (911 tokens)
+├── SKILL.md              the five steps (1,022 tokens)
 ├── references/           read only when needed
 │   ├── tool-skills.md    extra steps for skills that teach a tool
 │   ├── formats.md        how to write commands compactly, with measured costs
 │   └── eval.md           the before/after test
 └── scripts/
-    └── observe.mjs       logs each call an agent makes to a CLI, for the test
+    ├── observe.mjs       logs each call an agent makes to a CLI, for the test
+    └── eval.mjs          runs and scores the before/after test with Pi; checks links
 ```
 
 ## Limitations
