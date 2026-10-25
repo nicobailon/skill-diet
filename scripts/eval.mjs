@@ -6,14 +6,16 @@
 //                       [--model provider/id] [--tools read] [-- extra pi args, e.g. -e <extension>]
 // Score:  node eval.mjs score <dir> [--detail]
 // Check:  node eval.mjs check <skill-dir> [--baseline]   exits 1 on a relative link or #anchor that does not
-//         resolve, or when SKILL.md is over 10% larger than the byte count in <skill-dir>/.diet.
-//         --baseline writes the current SKILL.md size to .diet; run it when a diet ships.
+//         resolve, or when SKILL.md is over 10% larger than its size at the last diet.
+//         --baseline records the current size; run it when a diet ships. Sizes are kept per user, outside
+//         every repo, in ${XDG_STATE_HOME:-~/.local/state}/skill-diet/baselines.json, keyed by the skill's name.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup` and `check` run in the run's work dir; `check` must exit 0.
 // Finished runs are kept, so rerunning `run` only fills in missing ones.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const [command, target, ...rest] = process.argv.slice(2);
@@ -155,15 +157,20 @@ function score(dir) {
 
 function check(root) {
   const size = statSync(join(root, "SKILL.md")).size;
-  const dietFile = join(root, ".diet");
+  const name = readFileSync(join(root, "SKILL.md"), "utf8").match(/^name:\s*(.+)$/m)?.[1].trim();
+  if (!name) throw new Error(`${root}/SKILL.md has no name: in its frontmatter`);
+  const store = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "skill-diet", "baselines.json");
+  const baselines = existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : {};
   if (flags.includes("--baseline")) {
-    writeFileSync(dietFile, `${size}\n`);
-    console.log(`baseline ${size} bytes written to .diet`);
+    baselines[name] = size;
+    mkdirSync(dirname(store), { recursive: true });
+    writeFileSync(store, `${JSON.stringify(baselines, null, 2)}\n`);
+    console.log(`baseline for ${name}: ${size} bytes, in ${store}`);
     return;
   }
-  const baseline = existsSync(dietFile) ? Number(readFileSync(dietFile, "utf8")) : null;
+  const baseline = baselines[name] ?? null;
   const grown = baseline !== null && size > baseline * 1.1;
-  if (baseline === null) console.log("no .diet baseline; write one with check --baseline after a diet");
+  if (baseline === null) console.log(`no baseline for ${name}; record one with check --baseline after a diet`);
   else console.log(`SKILL.md ${size} bytes, baseline ${baseline} (${Math.round((size / baseline - 1) * 100)}%)${grown ? ": over 10%, run skill-diet" : ""}`);
   const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s/g, "-");
   const cache = {};
