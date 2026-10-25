@@ -1,9 +1,11 @@
 ---
 name: skill-diet
-description: Put an agent skill on a diet, cutting always-loaded tokens without changing what agents do with it. Use when a skill is large, loads detail most tasks never use, or has drifted from the tool it teaches.
+description: Keep agent skills lean and correct. Use before editing an existing skill, whether adding a lesson or following a code change that touches names or behavior a skill describes; and to put a skill on a full diet when it is large, loads detail most tasks never use, or has drifted from the tool it teaches.
 ---
 
 # Skill Diet
+
+Every line in `SKILL.md` is read on every use of the skill, and skills only grow unless someone cuts.
 
 ## The ladder
 
@@ -17,50 +19,22 @@ Put each fact on the lowest rung that still reaches the agent before it needs it
 
 A skill that teaches a tool gets two more rungs below these: the tool's own lookup, then its errors. A skill whose output gets checked (a renderer, a linter, tests) has the checker as its lowest rung. A cheap error can replace a rule; when one failure costs a whole cycle (a render that returns images), keep the rule inline and let the checker be a safety net.
 
-## Process
+## Editing a skill
 
-### 1. Baseline
+Before adding, go down this list and stop at the first step that handles the change.
 
-Copy the skill aside as the **before** version. Measure tokens for the `description`, `SKILL.md` and each reference file. Then measure the **typical-run load**: `SKILL.md` plus the references most runs read, from session logs or the eval, and any text a plugin or extension adds to every session.
+1. **Fix it below the skill.** A mechanical mistake (a wrong name, an ignored flag, a malformed call) gets a clearer error message, a check, or a test in the tool. Prose is for judgment calls.
+2. **Check the model needs it.** If an agent without the new line already does the right thing, add nothing.
+3. **Edit, don't append.** Find the line that already covers the idea and change it. Each meaning lives in one place across `SKILL.md`, references, and the tool's docs.
+4. **Place it on the lowest rung that arrives in time.**
+5. **Write the rule, not the story.** One positive rule under a short name. The incident behind it goes in the commit message.
 
-List every consumer of each file: skills that link it, code that embeds it, tests that assert its text. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives.
+**When the code changes**, update the skill in the same change whenever a name it uses (command, flag, field, default, path, error text) or a behavior its rules rely on changes. Search the skill for each changed name: fix renamed or removed names, rewrite rules whose behavior changed, and index new public operations by name only unless agents will call them often. Run the skill's coverage check; if it has none and this drift could recur, add one.
 
-Ask the owner which hosts and setups they still use; sections for dropped ones go.
+**Budget:** count `SKILL.md` tokens before and after, and put both numbers in the commit message. Offset growth with a cut where you can. `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` checks links and fails when `SKILL.md` is over 10% larger than at its last diet; then, or when the same idea appears in two places, do a full diet instead of patching.
 
-**Done when** the numbers and consumers are recorded.
+**Verify:** re-run the case that prompted the change with the edited skill, and run any tests that assert the skill's text.
 
-### 2. Branch on tools
+## Look up the rest
 
-If the skill teaches an agent to call a tool (a CLI, API, SDK, MCP server, native tool, or a script the skill ships), read [tool-skills.md](references/tool-skills.md) now and do its steps before step 3.
-
-### 3. Place
-
-Sort every piece onto the ladder by the runs that need it. A reference most runs end up reading belongs in `SKILL.md`; every other reference sits behind a pointer that names its case. Scripts, templates and assets are run or copied, never read into context. Keep each meaning in one place.
-
-**Done when** every piece sits on a rung and no meaning appears twice.
-
-### 4. Write
-
-- Name each rule with a short phrase the model already understands (a **tight** loop, **Own a session**), so the name carries most of the rule.
-- Where a standard the model already knows covers many rules, name it and say how far to follow it ("about 80% of the way to ASD-STE100").
-- Replace a list of cases with the one idea that produces them.
-- One positive test replaces a list of don'ts. Keep a prohibition only for a safety rule with no positive form.
-- Keep two or three inline safety lines for each risky area (writes, data leaving the machine, paid quota), even when its details move out.
-- Delete any line the model already obeys.
-- End `SKILL.md` with one pointer list, one line per case: `case → where to look`.
-
-**Done when** every line changes behavior or is needed before the agent acts.
-
-### 5. Verify
-
-- **Behavior**: observed before/after runs, per [eval.md](references/eval.md).
-- **Rules**: a fresh reviewer confirms each behavior rule in **before** still has a home; the eval covers only your tasks.
-- **Checks**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` passes (links, and growth since the last diet).
-
-Ship when the slim skill matches or beats the old one on task success. On a miss, the logs show what the agent lacked: move that piece up a rung before adding prose back.
-
-**Done when** the eval passes and `check <skill-dir> --baseline` has recorded the new size. Report tokens per rung before and after, the eval table, and what moved to which rung.
-
-## After the diet
-
-Fold anything this run showed was wrong, missing or slow in these steps into this skill by following the `skill-update` skill, budget included.
+- Full diet of a large, bloated or drifted skill → [references/diet.md](references/diet.md)

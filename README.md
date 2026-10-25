@@ -1,13 +1,16 @@
 # skill-diet
 
-**An agent skill that shrinks other skills without changing what agents do with them.**
+**An agent skill that keeps other skills lean and correct.**
 
-Skills grow. Every fix adds a line, no one removes one, and the whole file is loaded each time the skill is used. skill-diet rewrites a skill so the agent reads only what it needs before it acts and finds the rest when a task calls for it. It measures the skill before and after, and keeps the slim version only if agents do at least as well with it.
+Most skills load more text than a task needs, or hold stale or wrong details, and the whole file is loaded each time the skill is used. skill-diet does two things:
+
+- **A full diet.** It rewrites a skill so the agent reads only what it needs before it acts and finds the rest when a task calls for it, fixing what no longer matches the tool. It measures the skill before and after, and keeps the slim version only if agents do at least as well with it.
+- **A checklist for every edit.** Before an agent adds to a skill, it fixes the tool instead when an error message or check can catch the mistake, adds nothing the model already does, changes the line that already covers the idea instead of appending one, and puts the rule where only the runs that need it will read it. When code changes under a skill, the renamed flag or changed default goes into the skill in the same change.
 
 ```
 > put the surf skill on a diet
-> slim down ~/.pi/agent/skills/interactive-shell
 > is this skill still accurate for the current CLI?
+> add this lesson to the surf skill
 ```
 
 ## Why
@@ -28,7 +31,7 @@ Each fact goes on the lowest level that still reaches the agent before it needs 
 | the tool's own help | flags, allowed values, examples | when the agent picks that command |
 | errors and checkers | the right name, the fix | when a guess is wrong |
 
-The skill works in five steps: measure, take extra steps if the skill teaches a tool, place each piece on a level, rewrite it tighter, and verify with before-and-after agent runs. The extra steps for a tool:
+A full diet works in five steps: measure, take extra steps if the skill teaches a tool, place each piece on a level, rewrite it tighter, and verify with before-and-after agent runs. The extra steps for a tool:
 
 - prove each mismatch between skill and tool, by running it or pointing to the source line;
 - reads your session logs to find the commands agents actually use, and gives only those a full line;
@@ -64,8 +67,9 @@ git clone https://github.com/nicobailon/skill-diet ~/.pi/agent/skills/skill-diet
 
 ```
 skill-diet/
-├── SKILL.md              the five steps
+├── SKILL.md              the ladder and the edit checklist
 ├── references/           read only when needed
+│   ├── diet.md           the five steps of a full diet
 │   ├── tool-skills.md    extra steps for skills that teach a tool
 │   ├── formats.md        how to write commands compactly, with measured costs
 │   └── eval.md           the before/after test
@@ -80,10 +84,6 @@ skill-diet/
 - Command counts from session logs are approximate: forked sessions repeat calls.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session log instead.
 - Each skill's size at its last diet is stored per user in `~/.local/state/skill-diet/baselines.json`, never in a repo. A new machine starts with no baseline, so the growth check passes until the next diet records one.
-
-## Sibling
-
-[skill-update](https://github.com/nicobailon/skill-update) is the small checklist an agent runs before it adds to an existing skill, so the skill stays lean between diets. It hands off to skill-diet when a skill has grown about 10% since its last diet.
 
 ## Credits
 
