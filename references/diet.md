@@ -18,7 +18,7 @@ If the skill teaches an agent to call a tool (a CLI, API, SDK, MCP server, nativ
 
 ## 3. Place
 
-Sort every piece onto the ladder by the runs that need it. A reference most runs end up reading belongs in `SKILL.md`; every other reference sits behind a pointer that names its case. Scripts, templates and assets are run or copied, never read into context. Keep each meaning in one place.
+Sort every piece onto the ladder by the runs that need it. A reference most runs end up reading belongs in `SKILL.md`; every other reference sits behind a pointer that names its case. Scripts, templates and assets are run or copied, never read into context.
 
 **Done when** every piece sits on a rung and no meaning appears twice.
 
