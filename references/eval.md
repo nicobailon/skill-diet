@@ -20,7 +20,7 @@ Run them live in a fresh sandbox (a new browser profile, a scratch directory). G
 
 ## Measuring
 
-`node scripts/eval.mjs run <dir>` runs every version with Pi, and `score <dir>` prints tokens (including cached), reference reads, turns and wall time per version, and success per task; `--help` gives the task format. Run 2 tasks once first to check the scorer. When before and after fail the same task, read the outputs before touching the skill: the scorer is usually wrong. Score every call in the run, not just the first; rules about waiting, resuming or stopping only show up later. A small checker per task (`check`) asserts the end state: the file exists, the slider moved, the issue has the label.
+`node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs run <dir>` runs every version with Pi, and `score <dir>` prints tokens (including cached), skill file reads, turns and wall time per version, and success per task; `--help` gives the task format. Run 2 tasks once first to check the scorer. When before and after fail the same task, read the outputs before touching the skill: the scorer is usually wrong. Score every call in the run, not just the first; rules about waiting, resuming or stopping only show up later. A small checker per task (`check`) asserts the end state: the file exists, the slider moved, the issue has the label.
 
 When the result is judged on quality rather than an end state (a page, a diagram, a piece of writing), score each output with the skill's own checker, and have a fresh session judge each before/after pair blind, in random order.
 

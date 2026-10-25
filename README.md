@@ -64,7 +64,7 @@ git clone https://github.com/nicobailon/skill-diet ~/.pi/agent/skills/skill-diet
 
 ```
 skill-diet/
-├── SKILL.md              the five steps (1,025 tokens)
+├── SKILL.md              the five steps (1,022 tokens)
 ├── references/           read only when needed
 │   ├── tool-skills.md    extra steps for skills that teach a tool
 │   ├── formats.md        how to write commands compactly, with measured costs

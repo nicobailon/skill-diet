@@ -61,7 +61,7 @@ Sort every piece by the runs that need it. What every run needs stays in `SKILL.
 - **Tokens**: before and after, per rung.
 - **Behavior**: observed before/after runs, per [eval.md](references/eval.md).
 - **Rules**: a fresh reviewer confirms each behavior rule in **before** still has a home; the eval covers only your tasks.
-- **Links**: `node scripts/eval.mjs links <skill-dir>` passes.
+- **Links**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs links <skill-dir>` passes.
 
 Ship when the slim skill matches or beats the old one on task success. When it misses, the logs show where the agent went wrong: move the missing piece up a rung before adding prose back.
 
@@ -69,4 +69,4 @@ Ship when the slim skill matches or beats the old one on task success. When it m
 
 ## After the diet
 
-Fold anything this run showed was wrong, missing or slow in these steps into this skill with [skill-update](../skill-update/SKILL.md). Mechanical fixes go in `scripts/`.
+Fold anything this run showed was wrong, missing or slow in these steps into this skill with the `skill-update` skill.

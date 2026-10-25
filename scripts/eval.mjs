@@ -102,8 +102,8 @@ function score(dir) {
         .filter((l) => !/^\s*(#|\/\/)/.test(l))
         .join("\n"),
     );
-    const missing = (t.must ?? []).filter((p) => !new RegExp(p, "i").test(text));
-    const banned = (t.must_not ?? []).filter((p) => new RegExp(p, "i").test(code));
+    const missing = (t.must ?? []).filter((p) => !new RegExp(unquote(p), "i").test(text));
+    const banned = (t.must_not ?? []).filter((p) => new RegExp(unquote(p), "i").test(code));
     let tokens = 0, turns = 0;
     const reads = new Set();
     const sessions = join(out, "sessions");
