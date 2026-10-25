@@ -171,7 +171,7 @@ function check(root) {
   const baseline = baselines[name] ?? null;
   const grown = baseline !== null && size > baseline * 1.1;
   if (baseline === null) console.log(`no baseline for ${name}; record one with check --baseline after a diet`);
-  else console.log(`SKILL.md ${size} bytes, baseline ${baseline} (${Math.round((size / baseline - 1) * 100)}%)${grown ? ": over 10%, run skill-diet" : ""}`);
+  else console.log(`SKILL.md ${size} bytes, baseline ${baseline} (${Math.round((size / baseline - 1) * 100)}%)${grown ? ": over 10%, do a full diet (skill-diet references/diet.md)" : ""}`);
   const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s/g, "-");
   const cache = {};
   const anchors = (file) =>
