@@ -79,6 +79,10 @@ skill-diet/
 - Command counts from session logs are approximate: forked sessions repeat calls.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session log instead.
 
+## Sibling
+
+[skill-update](https://github.com/nicobailon/skill-update) is the small checklist an agent runs before it adds to an existing skill, so the skill stays lean between diets. It hands off to skill-diet when a skill has grown about 10% since its last diet.
+
 ## Credits
 
 The writing rules build on Matt Pocock's [writing-for-agents](https://github.com/mattpocock/skills/tree/main/skills/productivity/writing-for-agents) skill.
