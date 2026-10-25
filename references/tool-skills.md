@@ -16,8 +16,8 @@ The lookup and the wrong-guess signal are two more rungs below `references/`. Th
 
 `SKILL.md` keeps three tool parts next to its rules:
 
-- **Cheat sheet**: the hot operations, one full call line each.
-- **Hard shapes**: one example per call shape a model gets wrong from a grammar (JSON payloads, pipe syntax, repeatable `key=value`).
+- **Cheat sheet**: the hot operations, one full call line each, plus the rules models get wrong about them.
+- **Hard shapes**: one example per call shape a model gets wrong from a grammar (JSON payloads, pipe syntax, repeatable `key=value`). When a shape fails on some hosts, show the working alternative next to it.
 - **Index**: every other public operation, names only, grouped. The agent can only look up what it knows exists.
 
 ## Steps before Place
@@ -30,7 +30,7 @@ List the public surface from the tool itself, leaving out internal operations ag
 
 ### T2. Drift
 
-Measure the cost of each lookup (one operation's entry versus a whole group page). List the **drift**: names the tool rejects, parameters it accepts and ignores, public operations the skill never mentions, documented behavior that is broken in the tool itself. Prove each item by calling it or citing the source line; a matching name says nothing about an ignored parameter.
+Measure the cost of each lookup (one operation's entry versus a whole group page). List the **drift**: names the tool rejects, parameters it accepts and ignores, public operations the skill never mentions, documented behavior that is broken in the tool itself. Prove each item by calling it or citing the source line; a matching name says nothing about an ignored parameter. Measure how much of the skill the docs already cover by facts, not matching text: a paraphrase is still a copy.
 
 **Done when** every lookup cost is measured and every drift item has proof.
 
@@ -86,7 +86,7 @@ Each call becomes one JSON line with a kind:
 
 `node ~/.pi/agent/skills/skill-diet/scripts/observe.mjs --summary /tmp/diet/calls.jsonl` prints one row per version with the counts, the lookup output in KB and the valid-first-call rate.
 
-**Native or MCP tool**: read its calls from the session log. Pi writes `"type":"toolCall"` and `"role":"toolResult"` entries with `"isError"`; Claude Code writes `tool_use` and `tool_result` with `is_error`. Count operations by the argument that picks them, such as `action`.
+**Native or MCP tool**: read its calls from the session log. Pi writes `"type":"toolCall"` and `"role":"toolResult"` entries with `"isError"`; Claude Code writes `tool_use` and `tool_result` with `is_error`. Bridges may prefix tool names (`mcp__custom-tools__subagent`), so match the end of the name. Count operations by the argument that picks them, such as `action`.
 
 **API or SDK**: the calls live in the code or requests the agent writes. Count endpoint paths or function names in the session log's tool calls.
 

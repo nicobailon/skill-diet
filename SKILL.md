@@ -25,7 +25,9 @@ A skill that teaches a tool gets two more rungs below these: the tool's own look
 
 Copy the skill aside as the **before** version. Measure tokens for the `description`, `SKILL.md` and each reference file. Then measure the **typical-run load**: `SKILL.md` plus the references most runs read, from session logs or the eval, and any text a plugin or extension adds to every session.
 
-**Done when** the numbers are recorded.
+List every consumer of each file: skills that link it, code that embeds it, tests that assert its text. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives.
+
+**Done when** the numbers and consumers are recorded.
 
 ### 2. Branch on tools
 
