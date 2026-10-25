@@ -55,12 +55,12 @@ Sort every piece onto the ladder by the runs that need it. A reference most runs
 
 - **Behavior**: observed before/after runs, per [eval.md](references/eval.md).
 - **Rules**: a fresh reviewer confirms each behavior rule in **before** still has a home; the eval covers only your tasks.
-- **Links**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs links <skill-dir>` passes.
+- **Checks**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` passes (links, and growth since the last diet).
 
 Ship when the slim skill matches or beats the old one on task success. On a miss, the logs show what the agent lacked: move that piece up a rung before adding prose back.
 
-**Done when** the eval passes. Report tokens per rung before and after, the eval table, and what moved to which rung.
+**Done when** the eval passes and `check <skill-dir> --baseline` has recorded the new size. Report tokens per rung before and after, the eval table, and what moved to which rung.
 
 ## After the diet
 
-Fold anything this run showed was wrong, missing or slow in these steps into this skill by following the `skill-update` skill. This file doesn't grow: a lesson changes or replaces a line here, or goes to a reference or `scripts/`.
+Fold anything this run showed was wrong, missing or slow in these steps into this skill by following the `skill-update` skill, budget included.

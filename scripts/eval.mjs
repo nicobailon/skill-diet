@@ -5,7 +5,9 @@
 // Run:    node eval.mjs run <dir> [--versions before,after,none] [--tasks a,b] [--runs 3] [--parallel 6]
 //                       [--model provider/id] [--tools read] [-- extra pi args, e.g. -e <extension>]
 // Score:  node eval.mjs score <dir> [--detail]
-// Links:  node eval.mjs links <skill-dir>   exits 1 on a relative link or #anchor that does not resolve
+// Check:  node eval.mjs check <skill-dir> [--baseline]   exits 1 on a relative link or #anchor that does not
+//         resolve, or when SKILL.md is over 10% larger than the byte count in <skill-dir>/.diet.
+//         --baseline writes the current SKILL.md size to .diet; run it when a diet ships.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup` and `check` run in the run's work dir; `check` must exit 0.
@@ -22,7 +24,7 @@ const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.index
 
 if (command === "run" && target) await run(resolve(target));
 else if (command === "score" && target) score(resolve(target));
-else if (command === "links" && target) links(resolve(target));
+else if (command === "check" && target) check(resolve(target));
 else {
   const header = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1).filter((l) => l.startsWith("//"));
   console.log(header.map((l) => l.slice(3)).join("\n"));
@@ -151,7 +153,18 @@ function score(dir) {
   }
 }
 
-function links(root) {
+function check(root) {
+  const size = statSync(join(root, "SKILL.md")).size;
+  const dietFile = join(root, ".diet");
+  if (flags.includes("--baseline")) {
+    writeFileSync(dietFile, `${size}\n`);
+    console.log(`baseline ${size} bytes written to .diet`);
+    return;
+  }
+  const baseline = existsSync(dietFile) ? Number(readFileSync(dietFile, "utf8")) : null;
+  const grown = baseline !== null && size > baseline * 1.1;
+  if (baseline === null) console.log("no .diet baseline; write one with check --baseline after a diet");
+  else console.log(`SKILL.md ${size} bytes, baseline ${baseline} (${Math.round((size / baseline - 1) * 100)}%)${grown ? ": over 10%, run skill-diet" : ""}`);
   const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s/g, "-");
   const cache = {};
   const anchors = (file) =>
@@ -181,5 +194,5 @@ function links(root) {
     }
   }
   console.log(broken ? `${broken} broken link(s)` : `links ok (${files.length} files)`);
-  process.exit(broken ? 1 : 0);
+  process.exit(broken || grown ? 1 : 0);
 }
