@@ -5,11 +5,9 @@ description: Put an agent skill on a diet, cutting always-loaded tokens without 
 
 # Skill Diet
 
-Most of a skill's weight is detail only some runs need, rules the model already follows, and lists that one idea could replace. The diet keeps in context only what the agent needs before it acts, and moves the rest to where it arrives on a **need-to-know** basis.
-
 ## The ladder
 
-Put each fact on the lowest rung that still reaches the agent before it needs it.
+Put each fact on the lowest rung that still reaches the agent before it needs it: **need-to-know**.
 
 | Rung | Holds | Loaded |
 | --- | --- | --- |
@@ -17,7 +15,7 @@ Put each fact on the lowest rung that still reaches the agent before it needs it
 | `SKILL.md` | what every run needs | when the skill fires |
 | `references/` | what only some runs need, behind a pointer | when its case applies |
 
-A skill that teaches a tool gets two more rungs below these: the tool's own lookup, then its error messages. A skill whose output gets checked (a renderer, a linter, tests) has the checker as its lowest rung. Weigh that rung by what one failure costs: a cheap error can replace a rule, but when one failure costs a whole cycle (a render that returns images), keep the rule inline and let the checker be a safety net.
+A skill that teaches a tool gets two more rungs below these: the tool's own lookup, then its errors. A skill whose output gets checked (a renderer, a linter, tests) has the checker as its lowest rung. A cheap error can replace a rule; when one failure costs a whole cycle (a render that returns images), keep the rule inline and let the checker be a safety net.
 
 ## Process
 
@@ -35,11 +33,9 @@ Ask the owner which hosts and setups they still use; sections for dropped ones g
 
 If the skill teaches an agent to call a tool (a CLI, API, SDK, MCP server, native tool, or a script the skill ships), read [tool-skills.md](references/tool-skills.md) now and do its steps before step 3.
 
-**Done when** the tool steps are finished, or the skill teaches no tool.
-
 ### 3. Place
 
-Sort every piece by the runs that need it. What every run needs stays in `SKILL.md`, including a reference that most runs end up reading. What only some runs reach moves to `references/`, behind a pointer that names its case. Scripts, templates and assets are run or copied, never read into context. Keep each meaning in one place.
+Sort every piece onto the ladder by the runs that need it. A reference most runs end up reading belongs in `SKILL.md`; every other reference sits behind a pointer that names its case. Scripts, templates and assets are run or copied, never read into context. Keep each meaning in one place.
 
 **Done when** every piece sits on a rung and no meaning appears twice.
 
@@ -52,21 +48,19 @@ Sort every piece by the runs that need it. What every run needs stays in `SKILL.
 - Keep two or three inline safety lines for each risky area (writes, data leaving the machine, paid quota), even when its details move out.
 - Delete any line the model already obeys.
 - End `SKILL.md` with one pointer list, one line per case: `case → where to look`.
-- Trim the `description` to one trigger per distinct case.
 
 **Done when** every line changes behavior or is needed before the agent acts.
 
 ### 5. Verify
 
-- **Tokens**: before and after, per rung.
 - **Behavior**: observed before/after runs, per [eval.md](references/eval.md).
 - **Rules**: a fresh reviewer confirms each behavior rule in **before** still has a home; the eval covers only your tasks.
 - **Links**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs links <skill-dir>` passes.
 
-Ship when the slim skill matches or beats the old one on task success. When it misses, the logs show where the agent went wrong: move the missing piece up a rung before adding prose back.
+Ship when the slim skill matches or beats the old one on task success. On a miss, the logs show what the agent lacked: move that piece up a rung before adding prose back.
 
 **Done when** the eval passes. Report tokens per rung before and after, the eval table, and what moved to which rung.
 
 ## After the diet
 
-Fold anything this run showed was wrong, missing or slow in these steps into this skill with the `skill-update` skill.
+Fold anything this run showed was wrong, missing or slow in these steps into this skill by following the `skill-update` skill. This file doesn't grow: a lesson changes or replaces a line here, or goes to a reference or `scripts/`.
