@@ -8,31 +8,7 @@ Write cheat sheet lines and hard shapes in the syntax the agent types to call th
 | code (code mode, an SDK) | a TypeScript signature: `select(ref: string, values: string[], opts?: { by?: "value" \| "label" \| "index" })` |
 | a native or MCP tool call | the call's JSON shape: `{agent, task, async?: true}` |
 
-Usage-line notation:
-
-```text
-<arg>          required positional
-[--flag <v>]   optional flag with a value; [--switch] has none
-a|b|c          allowed values
-<ms>=20000     default
-…              repeatable
-x | y          alternative forms of one command
-# note         what the line can't show
-```
-
-Cost of the same content, measured on surf v2.23.0 (131 commands, all 292 flags, names only, o200k tokens):
-
-```text
-usage lines        1,734
-markdown table     2,626   one row per command
-TypeScript         2,718
-JSON Schema        4,863   MCP tools/list shape
-OpenAPI JSON       8,160
-OpenAPI YAML       9,784
-names-only index     347   grouped, one line per group
-```
-
-Machine formats wrap every command in the same boilerplate (`paths`, `requestBody`, `content`, `schema`). A table repeats its pipes and loses the call syntax the agent has to type.
+Usage lines use standard notation, plus `<ms>=20000` for a default and `# note` for what the line can't show. Prefer them over tables (1.5× the tokens), JSON Schema (3×) or OpenAPI (5×).
 
 One of each part:
 
