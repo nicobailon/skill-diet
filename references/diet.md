@@ -40,7 +40,7 @@ Write:
 - **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home or was cut under step 4, and checks each claim in **after** against the source.
 - `check <skill-dir>` passes.
 
-Ship when the slim skill matches or beats the old one. On a miss, the logs show what the agent lacked: move that piece up a level before adding prose back. Record the new size with `check <skill-dir> --baseline`, and report tokens per level before and after, the eval table, and what moved where.
+Ship when the slim skill matches or beats the old one. On a miss, the logs show what the agent lacked: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, and what moved where.
 
 ## After the diet
 

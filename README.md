@@ -70,7 +70,7 @@ Before an agent adds to a skill, it stops at the first step that handles the cha
 4. Put the new rule on the lowest level that reaches the agent in time.
 5. Write the rule, not the story behind it; the story goes in the commit message.
 
-When code changes a name or behavior a skill describes, the skill is updated in the same change. Each commit to a skill records its token count before and after, and once a skill grows about 10% past its last diet, it is due for another.
+When code changes a name or behavior a skill describes, the skill is updated in the same change. Each commit to a skill records its size before and after, and once a skill grows about 10% past its last diet, it is due for another.
 
 ## Install
 
@@ -116,7 +116,7 @@ skill-diet/
 │   └── eval.md           the before/after test
 └── scripts/
     ├── observe.mjs       wraps a CLI so every call an agent makes during the test is logged
-    └── eval.mjs          runs and scores the before/after test; counts a tool's calls, errors and skill reads in past sessions; checks links and growth since the last diet
+    └── eval.mjs          runs and scores the before/after test; counts a tool's calls, errors and skill reads in past sessions; checks a skill's links and prints its size
 ```
 
 ## Limitations
@@ -125,7 +125,6 @@ skill-diet/
 - The test runner has presets for Pi, Claude Code, Codex and Cursor. Any other agent runs through `--cmd` with its headless command, scored on success and time only, and you set up its skill isolation yourself.
 - Reading past sessions works with Pi, Claude Code, Codex CLI and Cursor CLI logs. Counts are approximate: a shell command that only mentions a tool's name counts too. Cursor's logs have no tool results, so its errors aren't counted.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session logs instead.
-- Each skill's size at its last diet is stored per user in `~/.local/state/skill-diet/baselines.json`, never in a repo. A new machine starts with no baseline, so the growth check passes until the next diet records one.
 
 ## Credits
 
