@@ -2,7 +2,7 @@
 // Runs the before/after eval with a coding agent and scores it.
 // Layout: <dir>/tasks.json  [{ id, prompt, must?: [regex], must_not?: [regex], setup?: "sh", check?: "sh" }]
 //         <dir>/sk/<version>/<skill>/   one skill folder per version; "none" needs no folder
-// Run:    node eval.mjs run <dir> [--agent pi | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
+// Run:    node eval.mjs run <dir> [--agent pi|claude | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
 //                       [--runs 3] [--parallel 6] [--model <id>] [--tools read] [-- extra agent args]
 //         --agent picks a preset that isolates the version's skill and reads tokens, turns and skill reads
 //         from the agent's output; a preset that can tell which skills the agent loaded stops the run when
@@ -27,7 +27,7 @@
 // "I won't run X" passes. `setup` and `check` run in the run's work dir; `check` must exit 0.
 // Finished runs are kept, so rerunning `run` only fills in missing ones.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -39,9 +39,10 @@ const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.index
 
 // A preset runs one agent headless and turns its output into a run record.
 // command({ prompt, skill, out }) -> { cmd, args, env? }; skill is the version's skill folder, or null for none.
-// parse(out, stdout) -> { answer, tokens: { input, output, cacheRead, cacheWrite }, turns, calls: [{ name, path?, command? }],
-// skillsSeen }; a field the agent's output doesn't carry is null. probe (optional): a prompt run once per version
-// before its tasks, for agents whose task output doesn't say which skills they loaded.
+// parse(out, stdout, skill) -> { answer, tokens: { input, output, cacheRead, cacheWrite }, turns,
+// calls: [{ name, path?, command? }], skillsSeen }; a field the agent's output doesn't carry is null. Paths into
+// the skill must name the version's skill folder. probe (optional): a prompt run once per version before its
+// tasks, for agents whose task output doesn't say which skills they loaded.
 const presets = {
   pi: {
     command: ({ prompt, skill, out }) => ({
@@ -69,6 +70,64 @@ const presets = {
       }
       // Pi's flags already load only the given skill, and its session log doesn't list skills.
       return { answer: stdout, tokens, turns, calls, skillsSeen: null };
+    },
+  },
+  claude: {
+    // Claude Code keeps its login in the default config dir, so the run narrows that config instead of replacing it.
+    // Built-in plugins and skills that survive these switches change between versions; when one appears, the
+    // isolation check names it, and it goes in this settings object.
+    command: ({ prompt, skill, out }) => {
+      const dirs = [];
+      if (skill) {
+        // --add-dir loads skills from <dir>/.claude/skills/; link the version's folder there.
+        const root = join(out, "claude");
+        mkdirSync(join(root, ".claude", "skills"), { recursive: true });
+        const link = join(root, ".claude", "skills", basename(skill));
+        if (!existsSync(link)) symlinkSync(skill, link);
+        dirs.push("--add-dir", root);
+      }
+      const settings = {
+        enabledPlugins: { "cc-plugin-plugin-authoring@builtin": false, "cc-plugin-agents-md@builtin": false, "cc-plugin-telemetry@builtin": false },
+        skillOverrides: { design: "off", doctor: "off" },
+      };
+      const tools = [...new Set([...opt("tools", "read").split(",").map((t) => t[0].toUpperCase() + t.slice(1)), "Skill"])].join(",");
+      return {
+        cmd: "claude",
+        args: ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--setting-sources", "project", "--settings", JSON.stringify(settings), "--strict-mcp-config", ...dirs, "--tools", tools, "--allowedTools", tools, "--permission-mode", "dontAsk", ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
+        env: { CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1", CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1", ENABLE_CLAUDEAI_MCP_SERVERS: "false" },
+      };
+    },
+    parse: (out, stdout, skill) => {
+      const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      const usage = { input: "input_tokens", output: "output_tokens", cacheRead: "cache_read_input_tokens", cacheWrite: "cache_creation_input_tokens" };
+      const calls = [], counted = new Set();
+      let answer = "", turns = null, skillsSeen = null;
+      // The agent reports paths through the link, often with /tmp resolved; map them all to the skill folder.
+      const link = skill && join(out, "claude", ".claude", "skills", basename(skill));
+      const aliases = skill ? [...new Set([link, realpathSync(link), realpathSync(skill)])] : [];
+      const toSkill = (s) => (s === undefined ? undefined : aliases.reduce((text, a) => text.replaceAll(a, skill), String(s)));
+      for (const line of stdout.split("\n")) {
+        let e;
+        try {
+          e = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (e.type === "system" && e.subtype === "init") skillsSeen = e.skills;
+        if (e.type === "result") (answer = e.result ?? ""), (turns = e.num_turns);
+        if (e.type !== "assistant") continue;
+        // Each content block arrives as its own event repeating the message's usage, so count usage once per id.
+        if (!counted.has(e.message.id)) {
+          counted.add(e.message.id);
+          for (const [k, field] of Object.entries(usage)) tokens[k] += e.message.usage?.[field] ?? 0;
+        }
+        for (const c of e.message.content ?? []) {
+          if (c.type !== "tool_use") continue;
+          if (c.name === "Skill") calls.push({ name: c.name, path: skill && c.input?.skill === skillsSeen?.[0] ? join(skill, "SKILL.md") : undefined });
+          else calls.push({ name: c.name, path: toSkill(c.input?.file_path ?? c.input?.path), command: toSkill(c.input?.command) });
+        }
+      }
+      return { answer, tokens, turns, calls, skillsSeen };
     },
   },
 };
@@ -160,7 +219,7 @@ function one(dir, preset, { v, t, r }) {
       exit ??= code;
       const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
       const wallMs = Date.now() - start;
-      const record = { version: v, task: t.id, run: r, exit, check, wallMs, skill, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8")) };
+      const record = { version: v, task: t.id, run: r, exit, check, wallMs, skill, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
       writeFileSync(join(out, "result.json"), JSON.stringify(record));
       console.log(v, t.id, r, exit, `${Math.round(wallMs / 1000)}s`);
       done(record);
