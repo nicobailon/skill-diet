@@ -104,7 +104,7 @@ skill-diet/
 ## Limitations
 
 - The before/after test runs real agent sessions, so it costs time and tokens. Run it before you ship a slimmer version, not after every update.
-- The test runner uses Pi. On other agents, run the same tasks by hand; the link and growth check works anywhere.
+- The test runner has a preset for Pi. Any other agent runs through `--cmd` with its headless command, scored on success and time only, and you set up its skill isolation yourself.
 - Reading past sessions works with Pi, Claude Code, Codex CLI and Cursor CLI logs. Counts are approximate: a shell command that only mentions a tool's name counts too. Cursor's logs have no tool results, so its errors aren't counted.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session logs instead.
 - Each skill's size at its last diet is stored per user in `~/.local/state/skill-diet/baselines.json`, never in a repo. A new machine starts with no baseline, so the growth check passes until the next diet records one.
