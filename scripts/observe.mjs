@@ -14,7 +14,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
@@ -99,6 +99,7 @@ child.on("close", (code, signal) => {
   );
   if (process.env.OBSERVE_LOG) {
     const record = { at: new Date(started).toISOString(), tags, args, code, signal, ms: Date.now() - started, stdoutBytes, stderrBytes, firstError: firstError.slice(0, 200), kind };
+    mkdirSync(dirname(process.env.OBSERVE_LOG), { recursive: true });
     appendFileSync(process.env.OBSERVE_LOG, `${JSON.stringify(record)}\n`);
   }
   // Set the code and let Node exit on its own, so piped output finishes draining first.

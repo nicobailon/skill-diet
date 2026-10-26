@@ -102,7 +102,7 @@ skill-diet/
 
 - The before/after test runs real agent sessions, so it costs time and tokens. Run it before you ship a slimmer version, not after every update.
 - The test runner uses Pi. On other agents, run the same tasks by hand; the link and growth check works anywhere.
-- Command counts from session logs are approximate: forked sessions repeat calls.
+- Command counts from session logs are approximate: a shell command that only mentions a tool's name counts too.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session log instead.
 - Each skill's size at its last diet is stored per user in `~/.local/state/skill-diet/baselines.json`, never in a repo. A new machine starts with no baseline, so the growth check passes until the next diet records one.
 

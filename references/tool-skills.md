@@ -57,7 +57,7 @@ A native or MCP tool's schema is sent with every request and can cost more than 
 ## When writing
 
 - Cheat sheet and hard shapes go in the syntax the agent uses to call the tool, with allowed values and defaults inline. [formats.md](formats.md) has the notation and the measured cost of each format.
-- Leave out what a native or MCP tool's schema already says. Put a rule agents break with only the schema in view into the tool's replies or errors. Its description sits in every session's cached prompt, so change it rarely, for a rule that must stop a call before it happens; a test that pins its bytes makes each change deliberate.
+- Leave out what a native or MCP tool's schema already says. Put a rule agents break with only the schema in view into the tool's replies or errors. Its description is in every session's cached prompt: put a rule there only when it must stop a call before it happens, and pin its bytes with a test so each change is deliberate.
 - In rules and prose, point to the lookup instead of copying a value the tool can print (thresholds, model lists, presets).
 
 ## When verifying
@@ -72,12 +72,10 @@ A native or MCP tool's schema is sent with every request and can cost more than 
 
 ## Logging calls
 
-Scripts are in `~/.pi/agent/skills/skill-diet/scripts/`.
+**CLI, during an eval**: `node ~/.pi/agent/skills/skill-diet/scripts/observe.mjs shim <tool>` puts a logging copy of the tool in `/tmp/diet/bin` and prints the line that runs an agent with it. Each call is logged as `lookup`, `invalid` or `action`; `observe.mjs` with no arguments explains each kind and how to tune it, and `observe.mjs --summary <log>` prints the counts, lookup KB and valid-first-call rate per version.
 
-**CLI, during an eval**: `node observe.mjs shim <tool>` puts a logging copy of the tool in `/tmp/diet/bin` and prints the line that runs an agent with it. Each call is logged as `lookup`, `invalid` or `action`; `observe.mjs` with no arguments explains each kind and how to tune it, and `observe.mjs --summary <log>` prints the counts, lookup KB and valid-first-call rate per version.
+**CLI, from past sessions**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs calls <tool> --cli` counts its subcommands in Pi and Claude Code shell calls.
 
-**CLI, from past sessions**: `node eval.mjs calls <tool> --cli` counts its subcommands in Pi and Claude Code shell calls.
-
-**Native or MCP tool**: `node eval.mjs calls <tool> --by <key>` prints argument-key counts, the values of `<key>`, and top error messages.
+**Native or MCP tool**: `calls <tool> --by <key>` prints argument-key counts, the values of `<key>`, and top error messages.
 
 **API or SDK**: the calls live in the code or requests the agent writes. Count endpoint paths or function names in the session log's tool calls.

@@ -172,10 +172,10 @@ function calls(tool) {
   const by = opt("by", "action").split(",");
   const cli = flags.includes("--cli");
   const escaped = tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const subcommands = (args) => [...String(args.command ?? "").matchAll(new RegExp(`(?:^|[\\s/;&|(])${escaped} ([a-z][a-z0-9.-]*)`, "g"))].map((m) => m[1]);
+  const subcommands = (args) => [...String(args.command ?? "").matchAll(new RegExp(`(?:^|[^\\w-])${escaped} ([a-z][a-z0-9.-]*)`, "g"))].map((m) => m[1]);
   const dirs = opt("dir") ? [resolve(opt("dir"))] : [join(homedir(), ".pi", "agent", "sessions"), join(homedir(), ".claude", "projects")];
   const matches = (name, args) =>
-    typeof name === "string" && (cli ? /(^|__)bash$/i.test(name) && subcommands(args).length > 0 : name === tool || name.endsWith(`__${tool}`));
+    typeof name === "string" && (cli ? subcommands(args).length > 0 : name === tool || name.endsWith(`__${tool}`));
   const seen = new Map(); // call id -> { args, error }; forked sessions repeat entries, so ids dedupe them
   const skill = opt("skill");
   const skillPath = skill && `/${skill}/SKILL.md`;
