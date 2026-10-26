@@ -1,0 +1,5 @@
+{
+  "name": "skill-diet",
+  "keywords": ["pi-package"],
+  "pi": { "skills": ["./"] }
+}
