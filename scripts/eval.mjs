@@ -5,9 +5,11 @@
 // Run:    node eval.mjs run <dir> [--versions before,after,none] [--tasks a,b] [--runs 3] [--parallel 6]
 //                       [--model provider/id] [--tools read] [-- extra pi args, e.g. -e <extension>]
 // Score:  node eval.mjs score <dir> [--detail]
-// Calls:  node eval.mjs calls <tool> [--days 60] [--by action] [--skill <name>] [--dir <sessions>]   counts a
-//         native or MCP tool's calls in Pi and Claude Code session logs: argument keys, values of the --by keys,
-//         top error messages, and with --skill how many sessions that call the tool read <name>/SKILL.md.
+// Calls:  node eval.mjs calls <tool> [--cli] [--days 60] [--by action] [--skill <name>] [--dir <sessions>]
+//         counts a native or MCP tool's calls in Pi and Claude Code session logs: argument keys, values of the
+//         --by keys, top error messages, and with --skill how many sessions that call the tool read
+//         <name>/SKILL.md. With --cli, <tool> is a command-line tool: shell calls that run it are counted by
+//         subcommand (approximate: a command that only mentions the name counts too).
 //         Default dirs are ~/.pi/agent/sessions and ~/.claude/projects; point --dir at an eval's runs/ to
 //         count wrong guesses.
 // Check:  node eval.mjs check <skill-dir> [--baseline]   exits 1 on a relative link or #anchor that does not
@@ -168,8 +170,12 @@ function score(dir) {
 function calls(tool) {
   const since = Date.now() - Number(opt("days", "60")) * 86_400_000;
   const by = opt("by", "action").split(",");
+  const cli = flags.includes("--cli");
+  const escaped = tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const subcommands = (args) => [...String(args.command ?? "").matchAll(new RegExp(`(?:^|[\\s/;&|(])${escaped} ([a-z][a-z0-9.-]*)`, "g"))].map((m) => m[1]);
   const dirs = opt("dir") ? [resolve(opt("dir"))] : [join(homedir(), ".pi", "agent", "sessions"), join(homedir(), ".claude", "projects")];
-  const matches = (name) => typeof name === "string" && (name === tool || name.endsWith(`__${tool}`));
+  const matches = (name, args) =>
+    typeof name === "string" && (cli ? /(^|__)bash$/i.test(name) && subcommands(args).length > 0 : name === tool || name.endsWith(`__${tool}`));
   const seen = new Map(); // call id -> { args, error }; forked sessions repeat entries, so ids dedupe them
   const skill = opt("skill");
   const skillPath = skill && `/${skill}/SKILL.md`;
@@ -202,7 +208,7 @@ function calls(tool) {
       if (m?.role === "toolResult" && seen.has(m.toolCallId)) seen.get(m.toolCallId).error = m.isError ? m.content : null;
       for (const c of Array.isArray(m?.content) ? m.content : []) {
         const args = c.type === "toolCall" ? c.arguments : c.type === "tool_use" ? c.input : undefined;
-        if (args && matches(c.name)) using.add(root), seen.set(c.id, { args, error: null });
+        if (args && matches(c.name, args)) using.add(root), seen.set(c.id, { args, error: null });
         if (args && skillPath && isRead(c.name) && String(args.path ?? args.file_path ?? "").endsWith(skillPath)) reading.add(root);
         if (c.type === "tool_result" && seen.has(c.tool_use_id)) seen.get(c.tool_use_id).error = c.is_error ? c.content : null;
       }
@@ -211,8 +217,9 @@ function calls(tool) {
   const count = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
   const keys = new Map(), values = new Map(), errors = new Map();
   for (const { args, error } of seen.values()) {
-    for (const k of Object.keys(args)) count(keys, k);
-    for (const k of by) if (args[k] !== undefined) count(values, `${k}=${JSON.stringify(args[k])}`);
+    if (cli) for (const sub of subcommands(args)) count(keys, sub);
+    else for (const k of Object.keys(args)) count(keys, k);
+    if (!cli) for (const k of by) if (args[k] !== undefined) count(values, `${k}=${JSON.stringify(args[k])}`);
     if (error) {
       const text = typeof error === "string" ? error : error.map((p) => p.text ?? "").join(" ");
       // Drop quoted values and a trailing id ("...not found: pr42-gate") so one message groups across sessions.
@@ -221,7 +228,7 @@ function calls(tool) {
   }
   const top = (map, n) => [...map].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${String(v).padStart(6)}  ${k}`).join("\n");
   const errorCount = [...errors.values()].reduce((a, b) => a + b, 0);
-  console.log(`${seen.size} ${tool} calls in ${files.length} session files, ${errorCount} errors\n\nargument keys:\n${top(keys, 30)}`);
+  console.log(`${seen.size} ${tool} calls in ${files.length} session files, ${errorCount} errors\n\n${cli ? "subcommands" : "argument keys"}:\n${top(keys, 30)}`);
   if (values.size) console.log(`\n${by.join(", ")} values:\n${top(values, 20)}`);
   if (errors.size) console.log(`\ntop errors:\n${top(errors, 15)}`);
   if (skill) console.log(`\n${skill}/SKILL.md read in ${[...using].filter((r) => reading.has(r)).length} of ${using.size} sessions that call ${tool}`);

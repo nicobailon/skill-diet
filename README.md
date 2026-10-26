@@ -44,6 +44,7 @@ For a skill that teaches a tool, the diet also:
 - proves each mismatch between skill and tool, by running it or pointing to the source line;
 - reads your session logs to find the commands agents actually use, and spells out only those in full;
 - checks that the tool's help and errors are good enough to replace skill text, and lists fixes where they aren't;
+- trims a tool's schema to the fields agents use, when the tool is yours, since the schema is sent with every request;
 - leaves a check that warns after a commit when the skill no longer matches the tool.
 
 Commands are written as plain usage lines, the way the agent types them, because that is the cheapest format. The same 131 Surf commands, names and flags only:

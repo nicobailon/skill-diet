@@ -4,23 +4,21 @@ Extra work for a skill that teaches an agent to call a tool. Most of such a skil
 
 An **operation** is one callable thing: a CLI command, a native or MCP tool call, an API endpoint, an SDK function. Its **parameters** are its flags, arguments or fields. Each kind of tool has its own sources:
 
-| Tool | Public surface | Lookup | Wrong-guess signal | Freshness trigger |
-| --- | --- | --- | --- | --- |
-| CLI | `--help`, command registry | `<tool> <command> --help` | its error for an unknown command or flag | post-commit hook in its repo |
-| native tool | its schema, already in the agent's context | a describe or guide call | its validation error | post-commit hook in its repo, or when it updates |
-| MCP server | `tools/list` | its schemas, or a gateway's search and describe | its validation error | when the server's version changes |
-| HTTP API | OpenAPI or GraphQL schema | the spec entry for one operation | the 4xx error body | when the spec's version changes |
-| SDK | exported type declarations | the declaration for one function | a type or runtime error | when the package's version changes |
-
-The lookup and the wrong-guess signal are two more rungs below `references/`. The lookup is loaded when the agent picks that operation; the wrong-guess signal arrives when a guess is wrong.
+| Tool | Public surface | Lookup |
+| --- | --- | --- |
+| CLI | `--help`, command registry | `<tool> <command> --help` |
+| native tool | its schema, sent with every request | a describe or guide call |
+| MCP server | `tools/list` | its schemas, or a gateway's search and describe |
+| HTTP API | OpenAPI or GraphQL schema | the spec entry for one operation |
+| SDK | exported type declarations | the declaration for one function |
 
 `SKILL.md` keeps three tool parts next to its rules:
 
-- **Cheat sheet**: the hot operations, one full call line each, plus the rules models get wrong about them.
+- **Cheat sheet**: the most-used operations, one full call line each, plus the rules models get wrong about them.
 - **Hard shapes**: one example per call shape a model gets wrong from a grammar (JSON payloads, pipe syntax, repeatable `key=value`). When a shape fails on some hosts, show the working alternative next to it.
 - **Index**: every other public operation, names only, grouped. The agent can only look up what it knows exists.
 
-## Steps before Place
+## Extra steps, before diet step 3
 
 ### T1. Inventory
 
@@ -34,13 +32,13 @@ Measure the cost of each lookup (one operation's entry versus a whole group page
 
 **Done when** every lookup cost is measured and every drift item has proof.
 
-### T3. Hot path
+### T3. Most-used calls
 
-Count real calls in session logs (see Logging calls), and group error results by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take the operations that every task in the skill's purpose needs.
+Count real calls in session logs (see Logging calls), and group error results by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take the operations that every task in the skill's purpose needs. For a native or MCP tool, also count how often agents open the skill (`calls <tool> --skill <name>`); agents often call the tool without reading it.
 
 **Done when** the cheat sheet list names its source.
 
-### T4. Gate the tool
+### T4. Check the tool's help and errors
 
 A lookup replaces skill text only once it works. Check that:
 
@@ -52,42 +50,34 @@ A lookup replaces skill text only once it works. Check that:
 
 If you control the tool, each gap becomes a change that lands before the skill relies on it. Until then, or for a tool you don't control, that material stays in the skill.
 
+A native or MCP tool's schema is sent with every request and can cost more than the skill. If you control the tool, have the schema list only the cheat sheet's fields; the rest stay accepted, are named in the skill, and a test checks that each one is.
+
 **Done when** each check passes, has a filed fix, or is covered in the skill.
 
 ## When writing
 
 - Cheat sheet and hard shapes go in the syntax the agent uses to call the tool, with allowed values and defaults inline. [formats.md](formats.md) has the notation and the measured cost of each format.
-- A native or MCP tool's schema is already in context, and agents often call the tool without opening its skill (`calls <tool> --skill <name>` gives the read rate). Leave out what the schema says, and put a rule agents break with only the schema in view into the tool's description or errors.
+- Leave out what a native or MCP tool's schema already says. Put a rule agents break with only the schema in view into the tool's replies or errors. Its description sits in every session's cached prompt, so change it rarely, for a rule that must stop a call before it happens; a test that pins its bytes makes each change deliberate.
 - In rules and prose, point to the lookup instead of copying a value the tool can print (thresholds, model lists, presets).
 
 ## When verifying
 
 - **Coverage**: every name in the skill resolves in the tool, every public operation is named in the skill, and every parameter and allowed value in the cheat sheet appears in the tool's surface. Zero misses.
-- **Eval**: add a **none** version (no skill, only the tool's own lookups) to show what the skill adds at all. Run every version against the same tool version, with whichever T4 fixes have landed; for a native tool, `run` drops it, so pass `--tools read,<tool>` and `-- -e <extension>`, or a stub extension with the real schema whose `execute` runs nothing. If no version reads the skill, the run measures the tool's own text; also run without the tool to see the skill once read. Weight tasks by the hot path, and give every hard shape a task. Add these columns: valid first call, wrong guesses, lookup KB.
+- **Eval**: add a **none** version (no skill, only the tool's own lookups) to show what the skill adds at all. Run every version against the same tool version, with whichever fixes from T4 have landed.
+  - For a native tool, `run` drops it, so pass `--tools read,<tool>` and `-- -e <extension>`, or a stub extension with the real schema whose `execute` runs nothing.
+  - If no version reads the skill, the run measures the tool's own text; also run without the tool to see the skill once read.
+  - Weight tasks by the most-used calls, and give every hard shape a task. Also report valid first calls, wrong guesses and lookup KB.
 - **Misses**: the logs name the operation that was guessed wrong. Promote it to the cheat sheet or hard shapes, or improve the tool's error.
-- **Keep it fresh**: save the coverage check as a script that reads one dump of the public surface. Run it on demand, and on the freshness trigger for the tool's kind. It only warns: silent while the skill holds, and naming the stale lines when it doesn't.
+- **Keep it fresh**: save the coverage check as a script that reads one dump of the public surface. Run it on demand, after each commit to a tool you control, and when a tool you don't control changes version. It only warns: silent while the skill holds, and naming the stale lines when it doesn't.
 
 ## Logging calls
 
-**CLI**: put the observe shim first on `PATH`. It logs every call and passes input and output through unchanged:
+Scripts are in `~/.pi/agent/skills/skill-diet/scripts/`.
 
-```bash
-mkdir -p /tmp/diet/bin
-printf '#!/bin/sh\nOBSERVE_REAL=%s exec node %s "$@"\n' "$(command -v <tool>)" ~/.pi/agent/skills/skill-diet/scripts/observe.mjs > /tmp/diet/bin/<tool>
-chmod +x /tmp/diet/bin/<tool>
-PATH=/tmp/diet/bin:$PATH OBSERVE_LOG=/tmp/diet/calls.jsonl OBSERVE_TAGS="version=after task=7 run=2" <agent command>
-```
+**CLI, during an eval**: `node observe.mjs shim <tool>` puts a logging copy of the tool in `/tmp/diet/bin` and prints the line that runs an agent with it. Each call is logged as `lookup`, `invalid` or `action`; `observe.mjs` with no arguments explains each kind and how to tune it, and `observe.mjs --summary <log>` prints the counts, lookup KB and valid-first-call rate per version.
 
-Each call becomes one JSON line of kind `lookup`, `invalid` or `action`; running `observe.mjs` without `OBSERVE_REAL` lists what each matches and how to tune it. `observe.mjs --summary /tmp/diet/calls.jsonl` prints one row per version with the counts, the lookup output in KB and the valid-first-call rate.
+**CLI, from past sessions**: `node eval.mjs calls <tool> --cli` counts its subcommands in Pi and Claude Code shell calls.
 
-**Native or MCP tool**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs calls <tool> --by action` reads Pi and Claude Code session logs and prints argument-key counts, `--by` values, and top error messages.
+**Native or MCP tool**: `node eval.mjs calls <tool> --by <key>` prints argument-key counts, the values of `<key>`, and top error messages.
 
 **API or SDK**: the calls live in the code or requests the agent writes. Count endpoint paths or function names in the session log's tool calls.
-
-For a CLI's hot path, Pi and Claude Code both log shell calls as `"command":"…"`:
-
-```bash
-rg -o --no-filename -g '*.jsonl' '"command":"(?:[^"\\]|\\.)*?\b<tool> ([a-z][a-z0-9.-]*)' -r '$1' ~/.pi/agent/sessions ~/.claude/projects | sort | uniq -c | sort -rn | head -30
-```
-
-The counts are approximate: forked sessions repeat calls, and prose that mentions a name matches too.
