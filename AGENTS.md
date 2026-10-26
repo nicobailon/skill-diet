@@ -8,4 +8,4 @@
 4. `gh release create v<version> --title v<version> --notes "$(node tools/version.mjs --notes)"`
 5. `npm publish` (lists the package in the pi.dev gallery through its `pi-package` keyword).
 
-`npm run check` must pass first; CI runs it on every push.
+`npm version` and `npm publish` run `npm run check` first and stop if it fails.

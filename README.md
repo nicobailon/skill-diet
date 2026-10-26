@@ -1,3 +1,5 @@
+<img src=".claude-plugin/icon.png" alt="" width="96">
+
 # skill-diet
 
 **An agent skill that keeps other skills lean and correct.**
