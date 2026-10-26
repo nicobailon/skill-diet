@@ -7,6 +7,7 @@
 //         A preset gives the agent only the version's copy of the skill and reads tokens, turns and skill
 //         reads from its output. --cmd runs any other agent: {prompt} and {skill} (the version's skill folder,
 //         empty for none) are replaced shell-quoted, and stdout plus stderr is the answer.
+//         Each run sets OBSERVE_TAGS="version=… task=… run=…" for observe.mjs.
 // Score:  node eval.mjs score <dir> [--detail]   also warns when a run read the skill from outside sk/<version>.
 // Calls:  node eval.mjs calls <tool> [--cli] [--days 60] [--by action] [--skill <name>] [--dir <sessions>]
 //         counts a native or MCP tool's calls in Pi, Claude Code, Codex CLI and Cursor CLI session logs:
@@ -15,11 +16,9 @@
 //         it are counted by subcommand (approximate: a command that only mentions the name counts too).
 //         Default dirs are ~/.pi/agent/sessions, ~/.claude/projects, ${CODEX_HOME:-~/.codex}/sessions and
 //         ~/.cursor/projects. Cursor logs no tool results, so its errors are not counted. Point --dir at an
-//         eval's runs/ to count wrong guesses.
-// Check:  node eval.mjs check <skill-dir> [--baseline]   exits 1 on a relative link or #anchor that does not
-//         resolve, or when SKILL.md is over 10% larger than its size at the last diet.
-//         --baseline records the current size; run it when a diet ships. Sizes are kept per user, outside
-//         every repo, in ${XDG_STATE_HOME:-~/.local/state}/skill-diet/baselines.json, keyed by the skill's name.
+//         eval's runs/ to count wrong guesses in Pi and Claude Code runs.
+// Check:  node eval.mjs check <skill-dir>   prints SKILL.md's size and exits 1 on a relative link or #anchor that
+//         does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
@@ -291,7 +290,7 @@ function one(dir, preset, { v, t, r }) {
   const fd = openSync(join(out, "stdout.txt"), "w");
   const start = Date.now();
   return new Promise((done) => {
-    const child = spawn(cmd, args, { cwd: work, env: { ...process.env, ...env }, stdio: ["ignore", fd, fd], detached: true });
+    const child = spawn(cmd, args, { cwd: work, env: { ...process.env, ...env, OBSERVE_TAGS: `version=${v} task=${t.id} run=${r}` }, stdio: ["ignore", fd, fd], detached: true });
     entry.child = child;
     let exit = null;
     const timer = setTimeout(() => {
@@ -305,6 +304,9 @@ function one(dir, preset, { v, t, r }) {
       rmSync(work, { recursive: true, force: true });
       const wallMs = Date.now() - start;
       const record = { version: v, task: t.id, run: r, exit, check, wallMs, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
+      // A clean exit with no usage means the agent's output format changed; a 0 in the table would hide that.
+      const u = record.tokens;
+      if (exit === 0 && !opt("cmd") && !(u && u.input + u.output + u.cacheRead + u.cacheWrite > 0)) throw new Error(`${cmd} exited 0 but no token usage was found in ${out}; its output format may have changed`);
       preset.cleanup?.(out);
       active.delete(entry);
       writeFileSync(join(out, "result.json"), JSON.stringify(record));
@@ -355,6 +357,7 @@ function score(dir) {
     const tokens = avg(r, (x) => x.tokens, 0);
     console.log(`| ${v} | ${r.filter((x) => x.ok).length}/${r.length} | ${tokens === "–" ? tokens : Number(tokens).toLocaleString()} | ${avg(r, (x) => x.turns, 1)} | ${avg(r, (x) => x.reads?.length, 1)} | ${avg(r, (x) => x.wallMs / 1000, 0)} |`);
   }
+  console.log("\ntokens/run counts cache reads at full price: use it to compare versions, not to cost them.");
   console.log(`\n| task | ${versions.join(" | ")} |\n|---|${versions.map(() => "---|").join("")}`);
   for (const id of Object.keys(tasks)) {
     const cells = versions.map((v) => {
@@ -367,6 +370,8 @@ function score(dir) {
     const runs = versions.flatMap((v) => rows[v].filter((x) => x.task === id));
     if (runs.length && !runs.some((x) => x.ok)) console.log(`WARN ${id} fails in every version: check the task, the setup, and whether any version read the skill`);
   }
+  const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]);
+  if (skilled.length && skilled.every((x) => x.reads?.length === 0)) console.log("WARN no run read the skill, so the scores measure the tool's own text; also run without the tool to see the skill once read");
   for (const v of versions.filter((v) => v !== "none")) {
     const counts = {};
     for (const x of rows[v]) for (const p of x.reads ?? []) counts[p] = (counts[p] ?? 0) + 1;
@@ -420,7 +425,7 @@ function calls(tool) {
       if (!existsSync(p)) continue; // live sessions can delete temp files mid-scan
       const s = statSync(p);
       if (s.isDirectory()) walk(p);
-      else if (n.endsWith(".jsonl") && s.mtimeMs >= since) files.push(p);
+      else if ((n.endsWith(".jsonl") || n === "stdout.txt") && s.mtimeMs >= since) files.push(p); // stdout.txt: a Claude eval run
     }
   };
   dirs.forEach(walk);
@@ -430,7 +435,8 @@ function calls(tool) {
     const root = file.match(/^(.*\/agent-transcripts\/[^/]+)\//)?.[1] ?? file.replace(/\.jsonl$/, "").split("/forks/")[0];
     const lines = readFileSync(file, "utf8").split("\n");
     for (const [n, line] of lines.entries()) {
-      if (!line.includes(tool) && !line.includes('"tool_result"') && !line.includes('_call_output"') && !(skillPath && line.includes(skillPath))) continue;
+      // A skill name alone, not its path, also keeps Claude Code's Skill tool calls ({"skill":"<name>"}).
+      if (!line.includes(tool) && !line.includes('"tool_result"') && !line.includes('_call_output"') && !(skill && line.includes(skill))) continue;
       let entry;
       try {
         entry = JSON.parse(line);
@@ -481,22 +487,7 @@ function calls(tool) {
 }
 
 function check(root) {
-  const size = statSync(join(root, "SKILL.md")).size;
-  const name = skillName(root);
-  if (!name) throw new Error(`${root}/SKILL.md has no name: in its frontmatter`);
-  const store = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "skill-diet", "baselines.json");
-  const baselines = existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : {};
-  if (flags.includes("--baseline")) {
-    baselines[name] = size;
-    mkdirSync(dirname(store), { recursive: true });
-    writeFileSync(store, `${JSON.stringify(baselines, null, 2)}\n`);
-    console.log(`baseline for ${name}: ${size} bytes, in ${store}`);
-    return;
-  }
-  const baseline = baselines[name] ?? null;
-  const grown = baseline !== null && size > baseline * 1.1;
-  if (baseline === null) console.log(`no baseline for ${name}; record one with check --baseline after a diet`);
-  else console.log(`SKILL.md ${size} bytes, baseline ${baseline} (${Math.round((size / baseline - 1) * 100)}%)${grown ? ": over 10%, do a full diet (skill-diet references/diet.md)" : ""}`);
+  console.log(`SKILL.md ${statSync(join(root, "SKILL.md")).size} bytes`);
   const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s/g, "-");
   const cache = {};
   const anchors = (file) =>
@@ -526,5 +517,5 @@ function check(root) {
     }
   }
   console.log(broken ? `${broken} broken link(s)` : `links ok (${files.length} files)`);
-  process.exit(broken || grown ? 1 : 0);
+  process.exit(broken ? 1 : 0);
 }

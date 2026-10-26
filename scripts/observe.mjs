@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Logs each call of a CLI to JSONL and passes its input and output through unchanged.
 // Setup:   node observe.mjs shim <tool> [bin-dir=/tmp/diet/bin]   writes a <tool> shim into bin-dir and prints
-//          the line that runs an agent with it first on PATH
+//          the line that runs the eval with it first on PATH
 // Shim:    OBSERVE_REAL=<real binary> OBSERVE_LOG=<file.jsonl> [OBSERVE_TAGS="k=v …"] node observe.mjs <args…>
+//          eval.mjs run sets OBSERVE_TAGS to each run's version, task and run.
 // Summary: node observe.mjs --summary <file.jsonl>
 // Each call is logged with a kind:
 //   lookup   arguments match OBSERVE_LOOKUP (default: --help, -h, --help-full, --help-topic, --find); set it for
@@ -26,7 +27,7 @@ if (args[0] === "shim" && args[1]) {
   if (!found.startsWith("/")) throw new Error(`observe: ${tool} is not an executable on PATH`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, tool), `#!/bin/sh\nOBSERVE_REAL=${quote(found)} exec node ${quote(fileURLToPath(import.meta.url))} "$@"\n`, { mode: 0o755 });
-  console.log(`PATH=${dir}:$PATH OBSERVE_LOG=/tmp/diet/calls.jsonl OBSERVE_TAGS="version=after task=7 run=2" <agent command>`);
+  console.log(`PATH=${dir}:$PATH OBSERVE_LOG=/tmp/diet/calls.jsonl node ${quote(join(dirname(fileURLToPath(import.meta.url)), "eval.mjs"))} run <dir> …`);
   process.exit(0);
 }
 
