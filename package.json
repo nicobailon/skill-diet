@@ -14,5 +14,5 @@
     "prepublishOnly": "npm run check",
     "version": "node tools/version.mjs && git add .claude-plugin/plugin.json CHANGELOG.md"
   },
-  "pi": { "skills": ["./"] }
+  "pi": { "skills": ["./"], "image": "./.claude-plugin/icon.png" }
 }
