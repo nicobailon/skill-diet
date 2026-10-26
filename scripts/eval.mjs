@@ -61,7 +61,7 @@ const jsonLines = (text) =>
     }
   });
 function skillName(folder) {
-  return readFileSync(join(folder, "SKILL.md"), "utf8").match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "") ?? basename(folder);
+  return readFileSync(join(folder, "SKILL.md"), "utf8").match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "");
 }
 const presets = {
   pi: {
@@ -105,20 +105,19 @@ const presets = {
       };
     },
     parse: (out, stdout, skill) => {
-      const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-      const usage = { input: "input_tokens", output: "output_tokens", cacheRead: "cache_read_input_tokens", cacheWrite: "cache_creation_input_tokens" };
-      const calls = [], counted = new Set();
-      let answer = "", turns = null;
+      const calls = [];
+      let answer = "", turns = null, tokens = null;
       const toSkill = toSkillPaths(skill, skill && join(out, "claude", ".claude", "skills", basename(skill)));
-      const name = skill && skillName(skill);
+      const name = skill && (skillName(skill) ?? basename(skill));
       for (const e of jsonLines(stdout)) {
-        if (e.type === "result") (answer = e.result ?? ""), (turns = e.num_turns);
-        if (e.type !== "assistant") continue;
-        // Each content block arrives as its own event repeating the message's usage, so count usage once per id.
-        if (!counted.has(e.message.id)) {
-          counted.add(e.message.id);
-          for (const [k, field] of Object.entries(usage)) tokens[k] += e.message.usage?.[field] ?? 0;
+        // Assistant events carry usage from the start of each message; the result has the final totals.
+        if (e.type === "result") {
+          const u = e.usage ?? {};
+          answer = e.result ?? "";
+          turns = e.num_turns;
+          tokens = { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 };
         }
+        if (e.type !== "assistant") continue;
         for (const c of e.message.content ?? []) {
           if (c.type !== "tool_use") continue;
           // The Skill tool loads a SKILL.md by name.
@@ -257,7 +256,7 @@ async function run(dir) {
   const runs = Number(opt("runs", "3"));
   const preset = pickPreset();
   if (preset.notice) console.log(preset.notice);
-  // On a crash, stop the agents still running and remove their temp folders.
+  // On a crash or Ctrl-C, stop the agents still running and remove their temp folders.
   process.on("exit", () => {
     for (const { child, out, work } of active) {
       try {
@@ -267,6 +266,7 @@ async function run(dir) {
       rmSync(work, { recursive: true, force: true });
     }
   });
+  for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => process.exit(130));
   const jobs = [];
   for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r });
   let next = 0;
@@ -278,7 +278,7 @@ async function run(dir) {
 
 function one(dir, preset, { v, t, r }) {
   const out = join(dir, "runs", `${v}-${t.id}-${r}`);
-  if (existsSync(join(out, "result.json"))) return JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
+  if (existsSync(join(out, "result.json"))) return;
   mkdirSync(out, { recursive: true });
   // The agent works outside the eval folder, where it could find other versions' skills and other runs' answers.
   const work = mkdtempSync(join(tmpdir(), "skill-diet-work-"));
@@ -303,12 +303,12 @@ function one(dir, preset, { v, t, r }) {
       const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
       rmSync(work, { recursive: true, force: true });
       const wallMs = Date.now() - start;
-      const record = { version: v, task: t.id, run: r, exit, check, wallMs, skill, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
+      const record = { version: v, task: t.id, run: r, exit, check, wallMs, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
       preset.cleanup?.(out);
       active.delete(entry);
       writeFileSync(join(out, "result.json"), JSON.stringify(record));
       console.log(v, t.id, r, exit, `${Math.round(wallMs / 1000)}s`);
-      done(record);
+      done();
     });
   });
 }
@@ -316,7 +316,7 @@ function one(dir, preset, { v, t, r }) {
 function score(dir) {
   const tasks = Object.fromEntries(loadTasks(dir).map((t) => [t.id, t]));
   const rows = {};
-  const folder = (existsSync(join(dir, "sk")) ? readdirSync(join(dir, "sk")) : []).map((v) => skillFolder(dir, v)).find(Boolean);
+  const folder = (existsSync(join(dir, "sk")) ? readdirSync(join(dir, "sk"), { withFileTypes: true }) : []).filter((d) => d.isDirectory()).map((d) => skillFolder(dir, d.name)).find(Boolean);
   const skillDir = folder && `/${basename(folder)}/`;
   for (const name of existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).sort() : []) {
     const out = join(dir, "runs", name);
@@ -481,7 +481,7 @@ function calls(tool) {
 
 function check(root) {
   const size = statSync(join(root, "SKILL.md")).size;
-  const name = readFileSync(join(root, "SKILL.md"), "utf8").match(/^name:\s*(.+)$/m)?.[1].trim();
+  const name = skillName(root);
   if (!name) throw new Error(`${root}/SKILL.md has no name: in its frontmatter`);
   const store = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "skill-diet", "baselines.json");
   const baselines = existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : {};
