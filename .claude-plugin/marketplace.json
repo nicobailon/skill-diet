@@ -1,0 +1,6 @@
+{
+  "name": "skill-diet",
+  "owner": { "name": "Nico Bailon" },
+  "description": "skill-diet, an agent skill that keeps other skills lean and correct.",
+  "plugins": [{ "name": "skill-diet", "source": "./", "description": "An agent skill that keeps other skills lean and correct." }]
+}

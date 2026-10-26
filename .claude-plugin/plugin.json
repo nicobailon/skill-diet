@@ -1,0 +1,11 @@
+{
+  "name": "skill-diet",
+  "version": "0.0.0",
+  "description": "An agent skill that keeps other skills lean and correct.",
+  "author": { "name": "Nico Bailon" },
+  "homepage": "https://github.com/nicobailon/skill-diet#readme",
+  "repository": "https://github.com/nicobailon/skill-diet",
+  "license": "MIT",
+  "keywords": ["skills", "agent-skills", "token-budget", "docs"],
+  "skills": ["./"]
+}

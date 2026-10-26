@@ -1,5 +1,16 @@
 {
   "name": "skill-diet",
-  "keywords": ["pi-package"],
+  "version": "0.0.0",
+  "description": "An agent skill that keeps other skills lean and correct.",
+  "keywords": ["pi-package", "agent-skills", "skills", "claude-code-plugin"],
+  "author": "Nico Bailon",
+  "license": "MIT",
+  "homepage": "https://github.com/nicobailon/skill-diet#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/nicobailon/skill-diet.git" },
+  "files": ["SKILL.md", "references", "scripts", ".claude-plugin", "CHANGELOG.md"],
+  "scripts": {
+    "check": "node scripts/eval.mjs check . && node tools/version.mjs --check",
+    "version": "node tools/version.mjs && git add .claude-plugin/plugin.json CHANGELOG.md"
+  },
   "pi": { "skills": ["./"] }
 }
