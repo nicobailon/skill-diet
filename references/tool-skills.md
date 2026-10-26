@@ -20,11 +20,11 @@ List names the tool rejects, parameters it accepts and ignores, public operation
 
 ### T3. Most-used calls
 
-Count real calls in session logs (see Logging calls) and group errors by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. For a native or MCP tool, also count how often agents open the skill (`calls <tool> --skill <name>`); they often call the tool without reading it.
+Count real calls in session logs (see Logging calls) and group errors by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take what every task needs, and say so. For a native or MCP tool, also count how often agents open the skill (`calls <tool> --skill <name>`); they often call the tool without reading it.
 
 ### T4. Check the tool's help and errors
 
-The tool's help replaces skill text only once:
+The tool's help replaces skill text only when:
 
 - every public operation has a help entry;
 - one entry covers one decision (about 100–300 tokens), not a whole group;
@@ -43,7 +43,7 @@ If you control the tool, fix each gap before the skill relies on it; otherwise t
 ## When verifying
 
 - **Coverage**: every name in the skill resolves in the tool, every public operation is named, and every parameter and value in the cheat sheet exists. Zero misses. Save it as a script that warns, and run it after each commit to a tool you control, or when a tool you don't control changes version.
-- **Eval**: add a **none** version with only the tool's own help. Run every version against the same tool version, with the T4 fixes in. Weight tasks by the most-used calls, give every hard shape a task, and report valid first calls, wrong guesses and help KB.
+- **Eval**: add a **none** version with only the tool's own help. Run every version against the same tool version, with whatever T4 fixes have landed. Weight tasks by the most-used calls, give every hard shape a task, and report valid first calls, wrong guesses and help KB.
   - For a native tool, `run` drops it: pass `--tools read,<tool>` and `-- -e <extension>`, or a stub extension with the real schema whose `execute` does nothing.
   - If no version reads the skill, the run measures the tool's own text; also run without the tool to see the skill once read.
 - **Misses**: the logs name the operation guessed wrong. Move it into the cheat sheet or hard shapes, or improve the tool's error.
@@ -53,3 +53,4 @@ If you control the tool, fix each gap before the skill relies on it; otherwise t
 - **CLI, in an eval**: `node ~/.pi/agent/skills/skill-diet/scripts/observe.mjs shim <tool>` installs a logging copy and prints how to run an agent with it; `observe.mjs --summary <log>` prints counts per version. Run `observe.mjs` alone for what each call kind means.
 - **CLI, past sessions**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs calls <tool> --cli`.
 - **Native or MCP tool**: `calls <tool> --by <key>`.
+- **API or SDK**: count endpoint paths or function names in the code the agent wrote, from the session log.

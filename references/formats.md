@@ -8,7 +8,7 @@ Write cheat sheet lines and hard shapes in the syntax the agent types to call th
 | code (code mode, an SDK) | a TypeScript signature: `select(ref: string, values: string[], opts?: { by?: "value" \| "label" \| "index" })` |
 | a native or MCP tool call | the call's JSON shape: `{agent, task, async?: true}` |
 
-Usage lines use standard notation, plus `<ms>=20000` for a default and `# note` for what the line can't show. Prefer them over tables, JSON Schema or OpenAPI, which cost two to five times as many tokens for the same commands.
+Usage lines use standard notation, plus `<ms>=20000` for a default and `# note` for what the line can't show. Prefer them over tables (1.5× the tokens), JSON Schema (3×) or OpenAPI (5×).
 
 One of each part:
 

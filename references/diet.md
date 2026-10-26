@@ -26,10 +26,10 @@ Cut:
 
 Write:
 
-- Name each rule with a short phrase the model already understands, like **Edit, don't append**.
+- Name each rule with a short phrase the model already understands.
 - Where a known standard covers many rules, name it and how far to follow it ("about 80% of the way to ASD-STE100").
 - Replace a list of cases with the idea that produces them, and a list of don'ts with one positive test. Keep a prohibition only for a safety rule with no positive form.
-- Keep two or three safety lines inline for each risky area (writes, data leaving the machine, paid quota).
+- Keep two or three safety lines inline for each risky area (writes, data leaving the machine, paid quota), even when the model knows them.
 - End `SKILL.md` with one line per case: `case → where to look`.
 
 **Done when** every line changes what the agent does, and no meaning appears twice.
@@ -37,8 +37,8 @@ Write:
 ## 5. Verify
 
 - **Behavior**: before/after runs, per [eval.md](eval.md).
-- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home and checks each claim in **after** against the source.
-- `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` passes.
+- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home or was cut under step 4, and checks each claim in **after** against the source.
+- `check <skill-dir>` passes.
 
 Ship when the slim skill matches or beats the old one. On a miss, the logs show what the agent lacked: move that piece up a level before adding prose back. Record the new size with `check <skill-dir> --baseline`, and report tokens per level before and after, the eval table, and what moved where.
 

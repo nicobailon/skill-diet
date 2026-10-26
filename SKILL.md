@@ -27,7 +27,7 @@ Before adding, stop at the first step that handles the change.
 4. **Pick its level.**
 5. **Write the rule, not the story.** One positive rule under a short name; the incident goes in the commit message.
 
-**When code changes** a name or behavior the skill relies on, update the skill in the same change. Index new public operations by name only, unless agents will call them often. Add a coverage check if the drift could recur.
+**When code changes** a name or behavior the skill relies on, update the skill in the same change. Index new public operations by name only, unless agents will call them often. Run the skill's coverage check, or add one if the drift could recur.
 
 **Budget:** put `SKILL.md` token counts before and after in the commit message, and offset growth with a cut. `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` checks links and fails when `SKILL.md` is over 10% larger than at its last diet; then, or when one idea appears in two places, do a full diet.
 
