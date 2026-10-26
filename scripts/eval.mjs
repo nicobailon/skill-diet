@@ -216,7 +216,8 @@ else if (command === "score" && target) score(resolve(target));
 else if (command === "calls" && target) calls(target);
 else if (command === "check" && target) check(resolve(target));
 else {
-  const header = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1).filter((l) => l.startsWith("//"));
+  const lines = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1);
+  const header = lines.slice(0, lines.findIndex((l) => !l.startsWith("//")));
   console.log(header.map((l) => l.slice(3)).join("\n"));
   process.exit(command === "--help" || command === "-h" ? 0 : 2);
 }
