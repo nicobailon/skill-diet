@@ -37,7 +37,7 @@ Sort every piece onto the ladder by the runs that need it. A reference most runs
 ## 5. Verify
 
 - **Behavior**: observed before/after runs, per [eval.md](eval.md).
-- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home and checks each claim in **after** against the source; a rewrite adds errors and carries old ones.
+- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home and checks each claim in **after** against the source.
 - **Checks**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` passes (links, and growth since the last diet).
 
 Ship when the slim skill matches or beats the old one on task success. On a miss, the logs show what the agent lacked: move that piece up a rung before adding prose back.

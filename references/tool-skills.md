@@ -78,7 +78,7 @@ chmod +x /tmp/diet/bin/<tool>
 PATH=/tmp/diet/bin:$PATH OBSERVE_LOG=/tmp/diet/calls.jsonl OBSERVE_TAGS="version=after task=7 run=2" <agent command>
 ```
 
-Each call becomes one JSON line of kind `lookup`, `invalid` or `action`; running `observe.mjs` without `OBSERVE_REAL` lists what each matches. During T4, tune `OBSERVE_INVALID` to the tool's own wrong-guess messages. `observe.mjs --summary /tmp/diet/calls.jsonl` prints one row per version with the counts, the lookup output in KB and the valid-first-call rate.
+Each call becomes one JSON line of kind `lookup`, `invalid` or `action`; running `observe.mjs` without `OBSERVE_REAL` lists what each matches and how to tune it. `observe.mjs --summary /tmp/diet/calls.jsonl` prints one row per version with the counts, the lookup output in KB and the valid-first-call rate.
 
 **Native or MCP tool**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs calls <tool> --by action` reads Pi and Claude Code session logs and prints argument-key counts, `--by` values, and top error messages.
 

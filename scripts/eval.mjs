@@ -172,12 +172,15 @@ function calls(tool) {
   const matches = (name) => typeof name === "string" && (name === tool || name.endsWith(`__${tool}`));
   const seen = new Map(); // call id -> { args, error }; forked sessions repeat entries, so ids dedupe them
   const skill = opt("skill");
-  const skillPath = skill && `${skill}/SKILL.md`;
-  let using = 0, reading = 0;
+  const skillPath = skill && `/${skill}/SKILL.md`;
+  const isRead = (name) => typeof name === "string" && /(^|__)read$/i.test(name);
+  // A Pi fork repeats its parent's entries, so sessions are counted by their root file.
+  const using = new Set(), reading = new Set();
   const files = [];
   const walk = (d) => {
     for (const n of existsSync(d) ? readdirSync(d) : []) {
       const p = join(d, n);
+      if (!existsSync(p)) continue; // live sessions can delete temp files mid-scan
       const s = statSync(p);
       if (s.isDirectory()) walk(p);
       else if (n.endsWith(".jsonl") && s.mtimeMs >= since) files.push(p);
@@ -185,12 +188,10 @@ function calls(tool) {
   };
   dirs.forEach(walk);
   for (const file of files) {
-    if (!existsSync(file)) continue; // live sessions can delete temp files mid-scan
-    let used = false, read = false;
+    if (!existsSync(file)) continue;
+    const root = file.replace(/\.jsonl$/, "").split("/forks/")[0];
     for (const line of readFileSync(file, "utf8").split("\n")) {
-      // Count tool calls that name the path, not prompts or prose that mention it.
-      if (skillPath && line.includes(skillPath) && /"(toolCall|tool_use)"/.test(line)) read = true;
-      if (!line.includes(tool) && !line.includes('"tool_result"')) continue;
+      if (!line.includes(tool) && !line.includes('"tool_result"') && !(skillPath && line.includes(skillPath))) continue;
       let m;
       try {
         m = JSON.parse(line).message;
@@ -200,12 +201,12 @@ function calls(tool) {
       // Pi: assistant toolCall + toolResult message. Claude Code: tool_use + user tool_result.
       if (m?.role === "toolResult" && seen.has(m.toolCallId)) seen.get(m.toolCallId).error = m.isError ? m.content : null;
       for (const c of Array.isArray(m?.content) ? m.content : []) {
-        if (c.type === "toolCall" && matches(c.name)) (used = true), seen.set(c.id, { args: c.arguments ?? {}, error: null });
-        if (c.type === "tool_use" && matches(c.name)) (used = true), seen.set(c.id, { args: c.input ?? {}, error: null });
+        const args = c.type === "toolCall" ? c.arguments : c.type === "tool_use" ? c.input : undefined;
+        if (args && matches(c.name)) using.add(root), seen.set(c.id, { args, error: null });
+        if (args && skillPath && isRead(c.name) && String(args.path ?? args.file_path ?? "").endsWith(skillPath)) reading.add(root);
         if (c.type === "tool_result" && seen.has(c.tool_use_id)) seen.get(c.tool_use_id).error = c.is_error ? c.content : null;
       }
     }
-    if (used) (using++, read && reading++);
   }
   const count = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
   const keys = new Map(), values = new Map(), errors = new Map();
@@ -214,8 +215,8 @@ function calls(tool) {
     for (const k of by) if (args[k] !== undefined) count(values, `${k}=${JSON.stringify(args[k])}`);
     if (error) {
       const text = typeof error === "string" ? error : error.map((p) => p.text ?? "").join(" ");
-      // Drop a trailing id ("...not found: pr42-gate") so one message groups across sessions.
-      count(errors, text.split("\n")[0].slice(0, 120).replace(/:\s*\S+$/, ": …"));
+      // Drop quoted values and a trailing id ("...not found: pr42-gate") so one message groups across sessions.
+      count(errors, text.split("\n")[0].replace(/'[^']*'|"[^"]*"/g, "'…'").replace(/:\s*\S+$/, ": …").slice(0, 120));
     }
   }
   const top = (map, n) => [...map].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${String(v).padStart(6)}  ${k}`).join("\n");
@@ -223,7 +224,7 @@ function calls(tool) {
   console.log(`${seen.size} ${tool} calls in ${files.length} session files, ${errorCount} errors\n\nargument keys:\n${top(keys, 30)}`);
   if (values.size) console.log(`\n${by.join(", ")} values:\n${top(values, 20)}`);
   if (errors.size) console.log(`\ntop errors:\n${top(errors, 15)}`);
-  if (skill) console.log(`\n${skillPath} read in ${reading} of ${using} sessions that call ${tool}`);
+  if (skill) console.log(`\n${skill}/SKILL.md read in ${[...using].filter((r) => reading.has(r)).length} of ${using.size} sessions that call ${tool}`);
 }
 
 function check(root) {
