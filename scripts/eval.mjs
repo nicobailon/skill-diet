@@ -22,7 +22,8 @@
 //         every repo, in ${XDG_STATE_HOME:-~/.local/state}/skill-diet/baselines.json, keyed by the skill's name.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
-// "I won't run X" passes. `setup` and `check` run in the run's work dir; `check` must exit 0.
+// "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
+// must exit 0.
 // Finished runs are kept, so rerunning `run` only fills in missing ones.
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -35,7 +36,7 @@ const flags = dash >= 0 ? rest.slice(0, dash) : rest;
 const extra = dash >= 0 ? rest.slice(dash + 1) : [];
 const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.indexOf(`--${name}`) + 1] : fallback);
 
-// A preset: command({ prompt, skill, out }) -> { cmd, args, env? }, where skill is the version's skill folder or null;
+// A preset: command({ prompt, skill, out, work }) -> { cmd, args, env? }, where skill is the version's skill folder or null;
 // parse(out, stdout, skill) -> { answer, tokens: { input, output, cacheRead, cacheWrite }, turns, calls: [{ name, path?,
 // command? }] }, null where the agent doesn't report it, with paths into the skill rewritten to the skill folder;
 // optional cleanup(out) after parse, notice printed when the run starts, and parallel to cap concurrent runs.
@@ -132,7 +133,7 @@ const presets = {
     notice: "codex: each run copies your Codex login file into a temp folder deleted after the run; a token refresh during a run updates only that copy",
     // A fresh HOME and CODEX_HOME hide installed copies of the skill (~/.agents/skills, ~/.codex/skills) and hold the
     // version's skill and a copy of the login. Both live outside the run folder, which the agent can read.
-    command: ({ prompt, skill, out }) => {
+    command: ({ prompt, skill, out, work }) => {
       const root = mkdtempSync(join(tmpdir(), "skill-diet-codex-"));
       tempHomes.set(out, root);
       const codexHome = join(root, "codex-home");
@@ -143,7 +144,7 @@ const presets = {
       if (skill) symlinkSync(skill, join(codexHome, "skills", basename(skill)));
       return {
         cmd: "codex",
-        args: ["exec", "--json", "-s", "read-only", "--skip-git-repo-check", "-C", join(out, "work"), ...(opt("model") ? ["-m", opt("model")] : []), ...extra, prompt],
+        args: ["exec", "--json", "-s", "read-only", "--skip-git-repo-check", "-C", work, ...(opt("model") ? ["-m", opt("model")] : []), ...extra, prompt],
         env: { HOME: join(root, "home"), CODEX_HOME: codexHome },
       };
     },
@@ -171,7 +172,7 @@ const presets = {
   cursor: {
     // A temp HOME holds the version's skill; the Keychains link keeps the macOS login.
     parallel: 1, // a second cursor-agent starting at the same time finds the login keychain locked
-    command: ({ prompt, skill, out }) => {
+    command: ({ prompt, skill, out, work }) => {
       const home = mkdtempSync(join(tmpdir(), "skill-diet-cursor-"));
       tempHomes.set(out, home);
       mkdirSync(join(home, ".cursor", "skills"), { recursive: true });
@@ -182,7 +183,7 @@ const presets = {
       }
       return {
         cmd: "cursor-agent",
-        args: ["-p", "--output-format", "stream-json", "--trust", "--force", "--workspace", join(out, "work"), ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
+        args: ["-p", "--output-format", "stream-json", "--trust", "--force", "--workspace", work, ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
         env: { HOME: home },
       };
     },
@@ -258,11 +259,12 @@ async function run(dir) {
   if (preset.notice) console.log(preset.notice);
   // On a crash, stop the agents still running and remove their temp folders.
   process.on("exit", () => {
-    for (const { child, out } of active) {
+    for (const { child, out, work } of active) {
       try {
         if (child) process.kill(-child.pid, "SIGKILL");
       } catch {}
       preset.cleanup?.(out);
+      rmSync(work, { recursive: true, force: true });
     }
   });
   const jobs = [];
@@ -276,14 +278,15 @@ async function run(dir) {
 
 function one(dir, preset, { v, t, r }) {
   const out = join(dir, "runs", `${v}-${t.id}-${r}`);
-  const work = join(out, "work");
   if (existsSync(join(out, "result.json"))) return JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
-  mkdirSync(work, { recursive: true });
+  mkdirSync(out, { recursive: true });
+  // The agent works outside the eval folder, where it could find other versions' skills and other runs' answers.
+  const work = mkdtempSync(join(tmpdir(), "skill-diet-work-"));
+  const entry = { out, work };
+  active.add(entry);
   if (t.setup && spawnSync("sh", ["-c", t.setup], { cwd: work, stdio: "inherit" }).status !== 0) throw new Error(`setup failed: ${t.id}`);
   const skill = skillFolder(dir, v);
-  const entry = { out };
-  active.add(entry);
-  const { cmd, args, env } = preset.command({ prompt: t.prompt, skill, out });
+  const { cmd, args, env } = preset.command({ prompt: t.prompt, skill, out, work });
   const fd = openSync(join(out, "stdout.txt"), "w");
   const start = Date.now();
   return new Promise((done) => {
@@ -298,6 +301,7 @@ function one(dir, preset, { v, t, r }) {
       clearTimeout(timer);
       exit ??= code;
       const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
+      rmSync(work, { recursive: true, force: true });
       const wallMs = Date.now() - start;
       const record = { version: v, task: t.id, run: r, exit, check, wallMs, skill, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
       preset.cleanup?.(out);
