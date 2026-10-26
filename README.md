@@ -72,25 +72,30 @@ When code changes a name or behavior a skill describes, the skill is updated in 
 
 ## Install
 
-Copy or clone the folder into your agent's skills directory:
-
-| Agent | Path |
-| --- | --- |
-| Pi | `~/.pi/agent/skills/skill-diet` |
-| Claude Code | `~/.claude/skills/skill-diet` |
-| Codex CLI | `~/.codex/skills/skill-diet` |
-| Cursor | `~/.cursor/skills/skill-diet` |
-| Other Agent Skills hosts | `~/.agents/skills/skill-diet` |
+Pi:
 
 ```bash
-git clone https://github.com/nicobailon/skill-diet <skills-dir>/skill-diet
+pi install git:github.com/nicobailon/skill-diet
 ```
+
+Update with `pi update --extensions`.
+
+Claude Code, Codex, Cursor and other agents:
+
+```bash
+npx skills add nicobailon/skill-diet -g
+```
+
+This keeps one copy in `~/.agents/skills`, linked into each agent you pick. Update with `npx skills update`. Use one route per agent; installing both loads the skill twice.
+
+To install by hand, clone the repo into `~/.agents/skills/skill-diet`, where Codex, Cursor and Pi read it, and link it into `~/.claude/skills/skill-diet` for Claude Code.
 
 ## What's inside
 
 ```
 skill-diet/
 ├── SKILL.md              the levels and the rules for every update
+├── package.json          lets `pi install` load the skill
 ├── references/           read only when needed
 │   ├── diet.md           the five steps of a diet
 │   ├── tool-skills.md    extra steps for skills that teach a tool
