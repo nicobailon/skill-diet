@@ -36,7 +36,7 @@ Measure the cost of each lookup (one operation's entry versus a whole group page
 
 ### T3. Hot path
 
-Count real calls in session logs (see Logging calls). The operations covering about 90% of calls form the cheat sheet. Without logs, take the operations that every task in the skill's purpose needs.
+Count real calls in session logs (see Logging calls), and group error results by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take the operations that every task in the skill's purpose needs.
 
 **Done when** the cheat sheet list names its source.
 
@@ -57,13 +57,13 @@ If you control the tool, each gap becomes a change that lands before the skill r
 ## When writing
 
 - Cheat sheet and hard shapes go in the syntax the agent uses to call the tool, with allowed values and defaults inline. [formats.md](formats.md) has the notation and the measured cost of each format.
-- Leave out what the agent already sees: a native or MCP tool's schema is in its context.
+- A native or MCP tool's schema is already in context, and agents often call the tool without opening its skill (`calls <tool> --skill <name>` gives the read rate). Leave out what the schema says, and put a rule agents break with only the schema in view into the tool's description or errors.
 - In rules and prose, point to the lookup instead of copying a value the tool can print (thresholds, model lists, presets).
 
 ## When verifying
 
 - **Coverage**: every name in the skill resolves in the tool, every public operation is named in the skill, and every parameter and allowed value in the cheat sheet appears in the tool's surface. Zero misses.
-- **Eval**: add a **none** version (no skill, only the tool's own lookups) to show what the skill adds at all. Run every version against the same tool version, with whichever T4 fixes have landed. Weight tasks by the hot path, and give every hard shape a task. Add these columns: valid first call, wrong guesses, lookup KB.
+- **Eval**: add a **none** version (no skill, only the tool's own lookups) to show what the skill adds at all. Run every version against the same tool version, with whichever T4 fixes have landed; for a native tool, `run` drops it, so pass `--tools read,<tool>` and `-- -e <extension>`, or a stub extension with the real schema whose `execute` runs nothing. If no version reads the skill, the run measures the tool's own text; also run without the tool to see the skill once read. Weight tasks by the hot path, and give every hard shape a task. Add these columns: valid first call, wrong guesses, lookup KB.
 - **Misses**: the logs name the operation that was guessed wrong. Promote it to the cheat sheet or hard shapes, or improve the tool's error.
 - **Keep it fresh**: save the coverage check as a script that reads one dump of the public surface. Run it on demand, and on the freshness trigger for the tool's kind. It only warns: silent while the skill holds, and naming the stale lines when it doesn't.
 
@@ -78,15 +78,9 @@ chmod +x /tmp/diet/bin/<tool>
 PATH=/tmp/diet/bin:$PATH OBSERVE_LOG=/tmp/diet/calls.jsonl OBSERVE_TAGS="version=after task=7 run=2" <agent command>
 ```
 
-Each call becomes one JSON line with a kind:
+Each call becomes one JSON line of kind `lookup`, `invalid` or `action`; running `observe.mjs` without `OBSERVE_REAL` lists what each matches. During T4, tune `OBSERVE_INVALID` to the tool's own wrong-guess messages. `observe.mjs --summary /tmp/diet/calls.jsonl` prints one row per version with the counts, the lookup output in KB and the valid-first-call rate.
 
-- `lookup`: `--help`, `-h`, `--help-full`, `--help-topic` or `--find`. Override with `OBSERVE_LOOKUP` (a regex matched against the joined arguments) for tools whose bare group name prints help.
-- `invalid`: a nonzero exit whose first error or output line says unknown, unsupported, invalid or usage. During T4, tune `OBSERVE_INVALID` to the tool's own wrong-guess messages, so a runtime failure such as a missing socket isn't scored as a bad guess.
-- `action`: everything else.
-
-`node ~/.pi/agent/skills/skill-diet/scripts/observe.mjs --summary /tmp/diet/calls.jsonl` prints one row per version with the counts, the lookup output in KB and the valid-first-call rate.
-
-**Native or MCP tool**: read its calls from the session log. Pi writes `"type":"toolCall"` and `"role":"toolResult"` entries with `"isError"`; Claude Code writes `tool_use` and `tool_result` with `is_error`. Bridges may prefix tool names (`mcp__custom-tools__subagent`), so match the end of the name. Count operations by the argument that picks them, such as `action`.
+**Native or MCP tool**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs calls <tool> --by action` reads Pi and Claude Code session logs and prints argument-key counts, `--by` values, and top error messages.
 
 **API or SDK**: the calls live in the code or requests the agent writes. Count endpoint paths or function names in the session log's tool calls.
 
