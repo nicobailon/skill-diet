@@ -36,7 +36,7 @@ Each fact goes on the lowest level that still reaches the agent before it needs 
 1. Measure the skill and what a typical task loads.
 2. If the skill teaches a tool, do the extra steps below.
 3. Place each piece on a level.
-4. Rewrite it tighter.
+4. Cut what the model already knows and what only a human needs, then rewrite the rest tighter.
 5. Run agents on the same tasks with the old and new versions, and keep the new one only if it does at least as well.
 
 For a skill that teaches a tool, the diet also:
@@ -91,7 +91,7 @@ skill-diet/
 ├── references/           read only when needed
 │   ├── diet.md           the five steps of a diet
 │   ├── tool-skills.md    extra steps for skills that teach a tool
-│   ├── formats.md        how to write commands compactly, with measured costs
+│   ├── formats.md        how to write commands compactly
 │   └── eval.md           the before/after test
 └── scripts/
     ├── observe.mjs       logs each call an agent makes to a CLI, for the test

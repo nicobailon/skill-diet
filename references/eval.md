@@ -1,27 +1,19 @@
 # Before/after eval
 
-Prove the slim skill by watching agents use it next to the old one.
-
 ## Versions
 
-- **before**: the copy saved in step 1.
-- **after**: the slim skill.
-- **none**: no skill. A task it passes marks rules the model follows anyway; their lines can go.
+**before**, **after**, and **none** (no skill). A task **none** passes marks rules the model follows anyway; their lines can go.
 
 ## Tasks
 
-10–15 one-line requests, sampled from real requests in session logs and pointed at a fixture, each with its expected outcome, covering:
+10–15 one-line requests sampled from real session logs, pointed at a fixture, each with its expected outcome. Cover every case in the `SKILL.md` link list, one task per removed "don't" rule, and each risky area.
 
-- every case in the list of links, so each moved piece gets reached;
-- one task per removed "don't" rule, to prove the positive rule covers it;
-- each risky area (writes, data leaving the machine, quota).
-
-Run them live in a fresh sandbox (a new browser profile, a scratch directory). Give each version its own skill directory and turn off context files (`AGENTS.md`, `CLAUDE.md`); flags that disable skills may not cover skills bundled in a package, so confirm each setup by asking a cheap model to list its skills. Send sub-work to the cheapest model through the fixture's settings; for a task that touches a real account, score what the agent writes instead of running it.
+Run them in a fresh sandbox. Give each version its own skill directory and turn off context files (`AGENTS.md`, `CLAUDE.md`). Flags that disable skills may miss skills bundled in a package, so confirm each setup by asking a cheap model to list its skills. Send sub-work to the cheapest model; for a task that touches a real account, score what the agent writes instead of running it.
 
 ## Measuring
 
-`node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs run <dir>` runs every version with Pi, and `score <dir>` prints tokens (including cached), skill file reads, turns and wall time per version, and success per task; `--help` gives the task format. Run 2 tasks once first to check the scorer. Read every failing output before touching the skill: the scorer is usually wrong (a `must` naming one valid shape rejects another). Fix the task, then rescore every version. Score every call in the run, not just the first; rules about waiting, resuming or stopping only show up later. A small checker per task (`check`) asserts the end state: the file exists, the slider moved, the issue has the label.
+`node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs run <dir>` runs every version with Pi and `score <dir>` scores them; `--help` gives the task format. Run 2 tasks first to check the scorer. Read every failing output before touching the skill: the scorer is usually wrong (a `must` that accepts one valid shape rejects another). Score every call in a run, not just the first; rules about waiting or stopping show up later. Give each task a `check` command that asserts the end state.
 
-When the result is judged on quality rather than an end state (a page, a diagram, a piece of writing), score each output with the skill's own checker, and have a fresh session judge each before/after pair blind, in random order.
+For quality results (a page, a diagram, prose), score with the skill's own checker and have a fresh session judge each before/after pair blind, in random order.
 
-Run each task 3 times per version, with the same model and a fresh session each time. Repeating both versions on a smaller model shows whether the slim skill helps or hurts weaker models.
+Run each task 3 times per version, same model, fresh session each time. Repeat on a smaller model to see whether the slim skill helps or hurts weaker models.
