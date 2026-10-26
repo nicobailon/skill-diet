@@ -2,7 +2,7 @@
 // Runs the before/after eval with a coding agent and scores it.
 // Layout: <dir>/tasks.json  [{ id, prompt, must?: [regex], must_not?: [regex], setup?: "sh", check?: "sh" }]
 //         <dir>/sk/<version>/<skill>/   one skill folder per version; "none" needs no folder
-// Run:    node eval.mjs run <dir> [--agent pi|claude|codex | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
+// Run:    node eval.mjs run <dir> [--agent pi|claude|codex|cursor | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
 //                       [--runs 3] [--parallel 6] [--model <id>] [--tools read] [-- extra agent args]
 //         A preset gives the agent only the version's copy of the skill and reads tokens, turns and skill
 //         reads from its output. --cmd runs any other agent: {prompt} and {skill} (the version's skill folder,
@@ -38,8 +38,12 @@ const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.index
 // A preset: command({ prompt, skill, out }) -> { cmd, args, env? }, where skill is the version's skill folder or null;
 // parse(out, stdout, skill) -> { answer, tokens: { input, output, cacheRead, cacheWrite }, turns, calls: [{ name, path?,
 // command? }] }, null where the agent doesn't report it, with paths into the skill rewritten to the skill folder;
-// optional cleanup(out) after parse, and notice printed when the run starts.
-const codexRoots = new Map(); // run folder -> its temp HOME/CODEX_HOME root
+// optional cleanup(out) after parse, notice printed when the run starts, and parallel to cap concurrent runs.
+const tempHomes = new Map(); // run folder -> the temp home a preset made outside it, which the agent can't read
+const removeTempHome = (out) => {
+  if (tempHomes.has(out)) rmSync(tempHomes.get(out), { recursive: true, force: true });
+  tempHomes.delete(out);
+};
 // Agents report paths through the link a preset made to the version's skill, sometimes with /tmp or /var resolved
 // to /private/...; rewrite each form to the skill folder, longest first so a shorter form can't match inside one.
 function toSkillPaths(skill, link) {
@@ -96,6 +100,7 @@ const presets = {
       return {
         cmd: "claude",
         args: ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--setting-sources", "project", ...dirs, "--tools", tools, "--allowedTools", tools, "--permission-mode", "dontAsk", ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
+        env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }, // keeps runs out of ~/.claude/projects
       };
     },
     parse: (out, stdout, skill) => {
@@ -129,7 +134,7 @@ const presets = {
     // version's skill and a copy of the login. Both live outside the run folder, which the agent can read.
     command: ({ prompt, skill, out }) => {
       const root = mkdtempSync(join(tmpdir(), "skill-diet-codex-"));
-      codexRoots.set(out, root);
+      tempHomes.set(out, root);
       const codexHome = join(root, "codex-home");
       mkdirSync(join(codexHome, "skills"), { recursive: true });
       mkdirSync(join(root, "home"), { recursive: true });
@@ -146,7 +151,7 @@ const presets = {
       const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
       const calls = [];
       let answer = "";
-      const toSkill = toSkillPaths(skill, skill && join(codexRoots.get(out), "codex-home", "skills", basename(skill)));
+      const toSkill = toSkillPaths(skill, skill && join(tempHomes.get(out), "codex-home", "skills", basename(skill)));
       for (const e of jsonLines(stdout)) {
         if (e.type === "item.completed" && e.item.type === "agent_message") answer = e.item.text;
         if (e.type === "item.completed" && e.item.type === "command_execution") calls.push({ name: "shell", command: toSkill(e.item.command) });
@@ -161,10 +166,45 @@ const presets = {
       }
       return { answer, tokens, turns: null, calls }; // --json has no request count
     },
-    cleanup: (out) => {
-      if (codexRoots.has(out)) rmSync(codexRoots.get(out), { recursive: true, force: true });
-      codexRoots.delete(out);
+    cleanup: removeTempHome,
+  },
+  cursor: {
+    // A temp HOME holds the version's skill; the Keychains link keeps the macOS login.
+    parallel: 1, // a second cursor-agent starting at the same time finds the login keychain locked
+    command: ({ prompt, skill, out }) => {
+      const home = mkdtempSync(join(tmpdir(), "skill-diet-cursor-"));
+      tempHomes.set(out, home);
+      mkdirSync(join(home, ".cursor", "skills"), { recursive: true });
+      if (skill) symlinkSync(skill, join(home, ".cursor", "skills", basename(skill)));
+      if (existsSync(join(homedir(), "Library", "Keychains"))) {
+        mkdirSync(join(home, "Library"));
+        symlinkSync(join(homedir(), "Library", "Keychains"), join(home, "Library", "Keychains"));
+      }
+      return {
+        cmd: "cursor-agent",
+        args: ["-p", "--output-format", "stream-json", "--trust", "--force", "--workspace", join(out, "work"), ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
+        env: { HOME: home },
+      };
     },
+    parse: (out, stdout, skill) => {
+      let answer = "", tokens = null;
+      const calls = [], modelCalls = new Set();
+      const toSkill = toSkillPaths(skill, skill && join(tempHomes.get(out), ".cursor", "skills", basename(skill)));
+      for (const e of jsonLines(stdout)) {
+        if (e.type === "assistant" && e.model_call_id) modelCalls.add(e.model_call_id);
+        if (e.type === "tool_call" && e.subtype === "completed") {
+          const [kind, call] = Object.entries(e.tool_call)[0];
+          calls.push({ name: kind, path: toSkill(call.args?.path), command: toSkill(call.args?.command) });
+        }
+        if (e.type === "result") {
+          const u = e.usage ?? {};
+          answer = e.result ?? "";
+          tokens = { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0, cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0 };
+        }
+      }
+      return { answer, tokens, turns: modelCalls.size || null, calls };
+    },
+    cleanup: removeTempHome,
   },
 };
 
@@ -231,7 +271,7 @@ async function run(dir) {
   const worker = async () => {
     while (next < jobs.length) await one(dir, preset, jobs[next++]);
   };
-  await Promise.all(Array.from({ length: Number(opt("parallel", "6")) }, worker));
+  await Promise.all(Array.from({ length: Number(preset.parallel ?? opt("parallel", "6")) }, worker));
 }
 
 function one(dir, preset, { v, t, r }) {
