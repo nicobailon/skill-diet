@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Logs each call of a CLI to JSONL and passes its input and output through unchanged.
+// Setup:   node observe.mjs shim <tool> [bin-dir=/tmp/diet/bin]   writes a <tool> shim into bin-dir and prints
+//          the line that runs an agent with it first on PATH
 // Shim:    OBSERVE_REAL=<real binary> OBSERVE_LOG=<file.jsonl> [OBSERVE_TAGS="k=v …"] node observe.mjs <args…>
 // Summary: node observe.mjs --summary <file.jsonl>
 // Each call is logged with a kind:
@@ -9,11 +11,24 @@
 //            invalid, usage); tune it to the tool's own wrong-guess messages so runtime failures don't count
 //   action   everything else
 // Without OBSERVE_REAL set, prints this help.
-import { spawn } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
+
+if (args[0] === "shim" && args[1]) {
+  const [, tool, dir = "/tmp/diet/bin"] = args;
+  const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const found = execFileSync("sh", ["-c", 'command -v "$0" || true', tool], { encoding: "utf8" }).trim();
+  if (!found.startsWith("/")) throw new Error(`observe: ${tool} is not an executable on PATH`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, tool), `#!/bin/sh\nOBSERVE_REAL=${quote(found)} exec node ${quote(fileURLToPath(import.meta.url))} "$@"\n`, { mode: 0o755 });
+  console.log(`PATH=${dir}:$PATH OBSERVE_LOG=/tmp/diet/calls.jsonl OBSERVE_TAGS="version=after task=7 run=2" <agent command>`);
+  process.exit(0);
+}
 
 if (args[0] === "--summary") {
   const rows = readFileSync(args[1], "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -84,6 +99,7 @@ child.on("close", (code, signal) => {
   );
   if (process.env.OBSERVE_LOG) {
     const record = { at: new Date(started).toISOString(), tags, args, code, signal, ms: Date.now() - started, stdoutBytes, stderrBytes, firstError: firstError.slice(0, 200), kind };
+    mkdirSync(dirname(process.env.OBSERVE_LOG), { recursive: true });
     appendFileSync(process.env.OBSERVE_LOG, `${JSON.stringify(record)}\n`);
   }
   // Set the code and let Node exit on its own, so piped output finishes draining first.

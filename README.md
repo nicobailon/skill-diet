@@ -44,6 +44,7 @@ For a skill that teaches a tool, the diet also:
 - proves each mismatch between skill and tool, by running it or pointing to the source line;
 - reads your session logs to find the commands agents actually use, and spells out only those in full;
 - checks that the tool's help and errors are good enough to replace skill text, and lists fixes where they aren't;
+- trims a tool's schema to the fields agents use, when the tool is yours, since the schema is sent with every request;
 - leaves a check that warns after a commit when the skill no longer matches the tool.
 
 Commands are written as plain usage lines, the way the agent types them, because that is the cheapest format. The same 131 Surf commands, names and flags only:
@@ -101,7 +102,7 @@ skill-diet/
 
 - The before/after test runs real agent sessions, so it costs time and tokens. Run it before you ship a slimmer version, not after every update.
 - The test runner uses Pi. On other agents, run the same tasks by hand; the link and growth check works anywhere.
-- Command counts from session logs are approximate: forked sessions repeat calls.
+- Command counts from session logs are approximate: a shell command that only mentions a tool's name counts too.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session log instead.
 - Each skill's size at its last diet is stored per user in `~/.local/state/skill-diet/baselines.json`, never in a repo. A new machine starts with no baseline, so the growth check passes until the next diet records one.
 
