@@ -2,7 +2,7 @@
 // Runs the before/after eval with a coding agent and scores it.
 // Layout: <dir>/tasks.json  [{ id, prompt, must?: [regex], must_not?: [regex], setup?: "sh", check?: "sh" }]
 //         <dir>/sk/<version>/<skill>/   one skill folder per version; "none" needs no folder
-// Run:    node eval.mjs run <dir> [--agent pi|claude | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
+// Run:    node eval.mjs run <dir> [--agent pi|claude|codex | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
 //                       [--runs 3] [--parallel 6] [--model <id>] [--tools read] [-- extra agent args]
 //         --agent picks a preset that isolates the version's skill and reads tokens, turns and skill reads
 //         from the agent's output; a preset that can tell which skills the agent loaded stops the run when
@@ -27,8 +27,8 @@
 // "I won't run X" passes. `setup` and `check` run in the run's work dir; `check` must exit 0.
 // Finished runs are kept, so rerunning `run` only fills in missing ones.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const [command, target, ...rest] = process.argv.slice(2);
@@ -39,10 +39,19 @@ const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.index
 
 // A preset runs one agent headless and turns its output into a run record.
 // command({ prompt, skill, out }) -> { cmd, args, env? }; skill is the version's skill folder, or null for none.
+// cleanup(out) (optional) runs after parse; notice (optional) is printed once when the run starts.
 // parse(out, stdout, skill) -> { answer, tokens: { input, output, cacheRead, cacheWrite }, turns,
 // calls: [{ name, path?, command? }], skillsSeen }; a field the agent's output doesn't carry is null. Paths into
 // the skill must name the version's skill folder. probe (optional): a prompt run once per version before its
 // tasks, for agents whose task output doesn't say which skills they loaded.
+const codexRoots = new Map(); // run folder -> its temp HOME/CODEX_HOME root
+// Agents report paths through the link a preset made to the version's skill, sometimes with /tmp or /var resolved
+// to /private/...; rewrite each form to the skill folder, longest first so a shorter form can't match inside one.
+function toSkillPaths(skill, link) {
+  if (!skill) return (s) => s;
+  const aliases = [...new Set([link, join(realpathSync(dirname(link)), basename(link)), realpathSync(skill)])].sort((a, b) => b.length - a.length);
+  return (s) => (s === undefined ? undefined : aliases.reduce((text, a) => text.replaceAll(a, skill), String(s)));
+}
 const presets = {
   pi: {
     command: ({ prompt, skill, out }) => ({
@@ -102,10 +111,7 @@ const presets = {
       const usage = { input: "input_tokens", output: "output_tokens", cacheRead: "cache_read_input_tokens", cacheWrite: "cache_creation_input_tokens" };
       const calls = [], counted = new Set();
       let answer = "", turns = null, skillsSeen = null;
-      // The agent reports paths through the link, often with /tmp resolved; map them all to the skill folder.
-      const link = skill && join(out, "claude", ".claude", "skills", basename(skill));
-      const aliases = skill ? [...new Set([link, realpathSync(link), realpathSync(skill)])] : [];
-      const toSkill = (s) => (s === undefined ? undefined : aliases.reduce((text, a) => text.replaceAll(a, skill), String(s)));
+      const toSkill = toSkillPaths(skill, skill && join(out, "claude", ".claude", "skills", basename(skill)));
       for (const line of stdout.split("\n")) {
         let e;
         try {
@@ -130,10 +136,61 @@ const presets = {
       return { answer, tokens, turns, calls, skillsSeen };
     },
   },
+  codex: {
+    notice: "codex: each run copies your Codex login file into a temp folder deleted after the run; a token refresh during a run updates only that copy",
+    // A fresh HOME and CODEX_HOME hide installed copies of the skill (~/.agents/skills, ~/.codex/skills) and hold the
+    // version's skill and a copy of the login. Both live outside the run folder, which the agent can read.
+    command: ({ prompt, skill, out }) => {
+      const root = mkdtempSync(join(tmpdir(), "skill-diet-codex-"));
+      codexRoots.set(out, root);
+      const codexHome = join(root, "codex-home");
+      mkdirSync(join(codexHome, "skills"), { recursive: true });
+      mkdirSync(join(root, "home"), { recursive: true });
+      copyFileSync(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json"), join(codexHome, "auth.json"));
+      chmodSync(join(codexHome, "auth.json"), 0o600);
+      if (skill) symlinkSync(skill, join(codexHome, "skills", basename(skill)));
+      return {
+        cmd: "codex",
+        args: ["exec", "--json", "-s", "read-only", "--skip-git-repo-check", "-C", join(out, "work"), ...(opt("model") ? ["-m", opt("model")] : []), ...extra, prompt],
+        env: { HOME: join(root, "home"), CODEX_HOME: codexHome },
+      };
+    },
+    parse: (out, stdout, skill) => {
+      const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      const calls = [];
+      let answer = "";
+      const toSkill = toSkillPaths(skill, skill && join(codexRoots.get(out), "codex-home", "skills", basename(skill)));
+      for (const line of stdout.split("\n")) {
+        let e;
+        try {
+          e = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (e.type === "item.completed" && e.item.type === "agent_message") answer = e.item.text;
+        if (e.type === "item.completed" && e.item.type === "command_execution") calls.push({ name: "shell", command: toSkill(e.item.command) });
+        // input_tokens includes the cached ones; output_tokens already includes reasoning.
+        if (e.type === "turn.completed") {
+          const u = e.usage;
+          tokens.input += u.input_tokens - u.cached_input_tokens;
+          tokens.cacheRead += u.cached_input_tokens;
+          tokens.cacheWrite += u.cache_write_input_tokens ?? 0;
+          tokens.output += u.output_tokens;
+        }
+      }
+      // Codex's --json output has no request count or skill list.
+      return { answer, tokens, turns: null, calls, skillsSeen: null };
+    },
+    cleanup: (out) => {
+      if (codexRoots.has(out)) rmSync(codexRoots.get(out), { recursive: true, force: true });
+      codexRoots.delete(out);
+    },
+  },
 };
 
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const active = new Set(); // { out, child? } for each run between preset.command and its cleanup
 
 if (command === "run" && target) await run(resolve(target));
 else if (command === "score" && target) score(resolve(target));
@@ -187,6 +244,16 @@ async function run(dir) {
   const versions = opt("versions", "before,after,none").split(",");
   const runs = Number(opt("runs", "3"));
   const preset = pickPreset();
+  if (preset.notice) console.log(preset.notice);
+  // An isolation failure or a crash exits mid-run: stop the agents still running and remove their temp folders.
+  process.on("exit", () => {
+    for (const { child, out } of active) {
+      try {
+        if (child) process.kill(-child.pid, "SIGKILL");
+      } catch {}
+      preset.cleanup?.(out);
+    }
+  });
   if (preset.probe) for (const v of versions) assertIsolated(await one(dir, preset, { v, t: { id: "probe", prompt: preset.probe }, r: 0 }));
   const jobs = [];
   for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r });
@@ -204,11 +271,14 @@ function one(dir, preset, { v, t, r }) {
   mkdirSync(work, { recursive: true });
   if (t.setup && spawnSync("sh", ["-c", t.setup], { cwd: work, stdio: "inherit" }).status !== 0) throw new Error(`setup failed: ${t.id}`);
   const skill = skillFolder(dir, v);
+  const entry = { out };
+  active.add(entry);
   const { cmd, args, env } = preset.command({ prompt: t.prompt, skill, out });
   const fd = openSync(join(out, "stdout.txt"), "w");
   const start = Date.now();
   return new Promise((done) => {
     const child = spawn(cmd, args, { cwd: work, env: { ...process.env, ...env }, stdio: ["ignore", fd, fd], detached: true });
+    entry.child = child;
     let exit = null;
     const timer = setTimeout(() => {
       exit = "timeout";
@@ -220,6 +290,8 @@ function one(dir, preset, { v, t, r }) {
       const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
       const wallMs = Date.now() - start;
       const record = { version: v, task: t.id, run: r, exit, check, wallMs, skill, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
+      preset.cleanup?.(out);
+      active.delete(entry);
       writeFileSync(join(out, "result.json"), JSON.stringify(record));
       console.log(v, t.id, r, exit, `${Math.round(wallMs / 1000)}s`);
       done(record);
