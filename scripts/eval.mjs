@@ -5,6 +5,11 @@
 // Run:    node eval.mjs run <dir> [--versions before,after,none] [--tasks a,b] [--runs 3] [--parallel 6]
 //                       [--model provider/id] [--tools read] [-- extra pi args, e.g. -e <extension>]
 // Score:  node eval.mjs score <dir> [--detail]
+// Calls:  node eval.mjs calls <tool> [--days 60] [--by action] [--skill <name>] [--dir <sessions>]   counts a
+//         native or MCP tool's calls in Pi and Claude Code session logs: argument keys, values of the --by keys,
+//         top error messages, and with --skill how many sessions that call the tool read <name>/SKILL.md.
+//         Default dirs are ~/.pi/agent/sessions and ~/.claude/projects; point --dir at an eval's runs/ to
+//         count wrong guesses.
 // Check:  node eval.mjs check <skill-dir> [--baseline]   exits 1 on a relative link or #anchor that does not
 //         resolve, or when SKILL.md is over 10% larger than its size at the last diet.
 //         --baseline records the current size; run it when a diet ships. Sizes are kept per user, outside
@@ -26,6 +31,7 @@ const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.index
 
 if (command === "run" && target) await run(resolve(target));
 else if (command === "score" && target) score(resolve(target));
+else if (command === "calls" && target) calls(target);
 else if (command === "check" && target) check(resolve(target));
 else {
   const header = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1).filter((l) => l.startsWith("//"));
@@ -148,11 +154,77 @@ function score(dir) {
     });
     console.log(`| ${id} | ${cells.join(" | ")} |`);
   }
+  for (const id of Object.keys(tasks)) {
+    const runs = versions.flatMap((v) => rows[v].filter((x) => x.task === id));
+    if (runs.length && !runs.some((x) => x.ok)) console.log(`WARN ${id} fails in every version: check the task, the setup, and whether any version read the skill`);
+  }
   for (const v of versions.filter((v) => v !== "none")) {
     const counts = {};
     for (const x of rows[v]) for (const p of x.reads) counts[p] = (counts[p] ?? 0) + 1;
     console.log(`${v} reads:`, JSON.stringify(counts));
   }
+}
+
+function calls(tool) {
+  const since = Date.now() - Number(opt("days", "60")) * 86_400_000;
+  const by = opt("by", "action").split(",");
+  const dirs = opt("dir") ? [resolve(opt("dir"))] : [join(homedir(), ".pi", "agent", "sessions"), join(homedir(), ".claude", "projects")];
+  const matches = (name) => typeof name === "string" && (name === tool || name.endsWith(`__${tool}`));
+  const seen = new Map(); // call id -> { args, error }; forked sessions repeat entries, so ids dedupe them
+  const skill = opt("skill");
+  const skillPath = skill && `/${skill}/SKILL.md`;
+  const isRead = (name) => typeof name === "string" && /(^|__)read$/i.test(name);
+  // A Pi fork repeats its parent's entries, so sessions are counted by their root file.
+  const using = new Set(), reading = new Set();
+  const files = [];
+  const walk = (d) => {
+    for (const n of existsSync(d) ? readdirSync(d) : []) {
+      const p = join(d, n);
+      if (!existsSync(p)) continue; // live sessions can delete temp files mid-scan
+      const s = statSync(p);
+      if (s.isDirectory()) walk(p);
+      else if (n.endsWith(".jsonl") && s.mtimeMs >= since) files.push(p);
+    }
+  };
+  dirs.forEach(walk);
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const root = file.replace(/\.jsonl$/, "").split("/forks/")[0];
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      if (!line.includes(tool) && !line.includes('"tool_result"') && !(skillPath && line.includes(skillPath))) continue;
+      let m;
+      try {
+        m = JSON.parse(line).message;
+      } catch {
+        continue;
+      }
+      // Pi: assistant toolCall + toolResult message. Claude Code: tool_use + user tool_result.
+      if (m?.role === "toolResult" && seen.has(m.toolCallId)) seen.get(m.toolCallId).error = m.isError ? m.content : null;
+      for (const c of Array.isArray(m?.content) ? m.content : []) {
+        const args = c.type === "toolCall" ? c.arguments : c.type === "tool_use" ? c.input : undefined;
+        if (args && matches(c.name)) using.add(root), seen.set(c.id, { args, error: null });
+        if (args && skillPath && isRead(c.name) && String(args.path ?? args.file_path ?? "").endsWith(skillPath)) reading.add(root);
+        if (c.type === "tool_result" && seen.has(c.tool_use_id)) seen.get(c.tool_use_id).error = c.is_error ? c.content : null;
+      }
+    }
+  }
+  const count = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
+  const keys = new Map(), values = new Map(), errors = new Map();
+  for (const { args, error } of seen.values()) {
+    for (const k of Object.keys(args)) count(keys, k);
+    for (const k of by) if (args[k] !== undefined) count(values, `${k}=${JSON.stringify(args[k])}`);
+    if (error) {
+      const text = typeof error === "string" ? error : error.map((p) => p.text ?? "").join(" ");
+      // Drop quoted values and a trailing id ("...not found: pr42-gate") so one message groups across sessions.
+      count(errors, text.split("\n")[0].replace(/'[^']*'|"[^"]*"/g, "'…'").replace(/:\s*\S+$/, ": …").slice(0, 120));
+    }
+  }
+  const top = (map, n) => [...map].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${String(v).padStart(6)}  ${k}`).join("\n");
+  const errorCount = [...errors.values()].reduce((a, b) => a + b, 0);
+  console.log(`${seen.size} ${tool} calls in ${files.length} session files, ${errorCount} errors\n\nargument keys:\n${top(keys, 30)}`);
+  if (values.size) console.log(`\n${by.join(", ")} values:\n${top(values, 20)}`);
+  if (errors.size) console.log(`\ntop errors:\n${top(errors, 15)}`);
+  if (skill) console.log(`\n${skill}/SKILL.md read in ${[...using].filter((r) => reading.has(r)).length} of ${using.size} sessions that call ${tool}`);
 }
 
 function check(root) {

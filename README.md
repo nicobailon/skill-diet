@@ -94,7 +94,7 @@ skill-diet/
 │   └── eval.md           the before/after test
 └── scripts/
     ├── observe.mjs       logs each call an agent makes to a CLI, for the test
-    └── eval.mjs          runs and scores the before/after test; checks links and growth since the last diet
+    └── eval.mjs          runs and scores the before/after test; counts a tool's calls, errors and skill reads in session logs; checks links and growth since the last diet
 ```
 
 ## Limitations

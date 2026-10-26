@@ -2,6 +2,13 @@
 // Logs each call of a CLI to JSONL and passes its input and output through unchanged.
 // Shim:    OBSERVE_REAL=<real binary> OBSERVE_LOG=<file.jsonl> [OBSERVE_TAGS="k=v …"] node observe.mjs <args…>
 // Summary: node observe.mjs --summary <file.jsonl>
+// Each call is logged with a kind:
+//   lookup   arguments match OBSERVE_LOOKUP (default: --help, -h, --help-full, --help-topic, --find); set it for
+//            tools whose bare group name prints help
+//   invalid  nonzero exit whose first error or output line matches OBSERVE_INVALID (default: unknown, unsupported,
+//            invalid, usage); tune it to the tool's own wrong-guess messages so runtime failures don't count
+//   action   everything else
+// Without OBSERVE_REAL set, prints this help.
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { constants } from "node:os";
@@ -37,7 +44,8 @@ if (args[0] === "--summary") {
 
 const real = process.env.OBSERVE_REAL;
 if (!real) {
-  console.error("observe: set OBSERVE_REAL to the real binary");
+  const header = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1).filter((l) => l.startsWith("//"));
+  console.error(header.map((l) => l.slice(3)).join("\n"));
   process.exit(2);
 }
 const lookup = new RegExp(process.env.OBSERVE_LOOKUP || "(^| )(--help|-h|--help-full|--help-topic|--find)( |$)");

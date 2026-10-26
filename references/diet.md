@@ -6,7 +6,7 @@ Rewrite a whole skill onto [the ladder](../SKILL.md#the-ladder), then prove agen
 
 Copy the skill aside as the **before** version. Measure tokens for the `description`, `SKILL.md` and each reference file. Then measure the **typical-run load**: `SKILL.md` plus the references most runs read, from session logs or the eval, and any text a plugin or extension adds to every session.
 
-List every consumer of each file: skills that link it, code that embeds it, tests that assert its text. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives.
+List every consumer of each file: skills that link it, code that embeds it, tests that assert its text (point them at the whole skill folder), and pointers to the skill by name (tool descriptions, prompt guidelines). Confirm the host loads this copy, not a stale one, and that each pointer resolves to it. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives.
 
 Ask the owner which hosts and setups they still use; sections for dropped ones go.
 
@@ -37,7 +37,7 @@ Sort every piece onto the ladder by the runs that need it. A reference most runs
 ## 5. Verify
 
 - **Behavior**: observed before/after runs, per [eval.md](eval.md).
-- **Rules**: a fresh reviewer confirms each behavior rule in **before** still has a home; the eval covers only your tasks.
+- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home and checks each claim in **after** against the source.
 - **Checks**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs check <skill-dir>` passes (links, and growth since the last diet).
 
 Ship when the slim skill matches or beats the old one on task success. On a miss, the logs show what the agent lacked: move that piece up a rung before adding prose back.
