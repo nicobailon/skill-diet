@@ -10,6 +10,8 @@
   "files": ["SKILL.md", "references", "scripts", ".claude-plugin", "CHANGELOG.md"],
   "scripts": {
     "check": "node scripts/eval.mjs check . && node tools/version.mjs --check",
+    "preversion": "npm run check",
+    "prepublishOnly": "npm run check",
     "version": "node tools/version.mjs && git add .claude-plugin/plugin.json CHANGELOG.md"
   },
   "pi": { "skills": ["./"] }
