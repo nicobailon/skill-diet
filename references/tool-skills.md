@@ -50,7 +50,7 @@ If you control the tool, fix each gap before the skill relies on it; otherwise t
 
 ## Logging calls
 
-- **CLI, in an eval**: `node ~/.pi/agent/skills/skill-diet/scripts/observe.mjs shim <tool>` installs a logging copy and prints how to run an agent with it; `observe.mjs --summary <log>` prints counts per version. Run `observe.mjs` alone for what each call kind means.
-- **CLI, past sessions**: `node ~/.pi/agent/skills/skill-diet/scripts/eval.mjs calls <tool> --cli`.
+- **CLI, in an eval**: `observe.mjs shim <tool>` installs a logging copy and prints how to run an agent with it; `observe.mjs --summary <log>` prints counts per version. Run `observe.mjs` alone for what each call kind means.
+- **CLI, past sessions**: `eval.mjs calls <tool> --cli`.
 - **Native or MCP tool**: `calls <tool> --by <key>`.
 - **API or SDK**: count endpoint paths or function names in the code the agent wrote, from the session log.

@@ -6,12 +6,13 @@
 //                       [--model provider/id] [--tools read] [-- extra pi args, e.g. -e <extension>]
 // Score:  node eval.mjs score <dir> [--detail]
 // Calls:  node eval.mjs calls <tool> [--cli] [--days 60] [--by action] [--skill <name>] [--dir <sessions>]
-//         counts a native or MCP tool's calls in Pi and Claude Code session logs: argument keys, values of the
-//         --by keys, top error messages, and with --skill how many sessions that call the tool read
-//         <name>/SKILL.md. With --cli, <tool> is a command-line tool: shell calls that run it are counted by
-//         subcommand (approximate: a command that only mentions the name counts too).
-//         Default dirs are ~/.pi/agent/sessions and ~/.claude/projects; point --dir at an eval's runs/ to
-//         count wrong guesses.
+//         counts a native or MCP tool's calls in Pi, Claude Code, Codex CLI and Cursor CLI session logs:
+//         argument keys, values of the --by keys, top error messages, and with --skill how many sessions that
+//         call the tool read <name>/SKILL.md. With --cli, <tool> is a command-line tool: shell calls that run
+//         it are counted by subcommand (approximate: a command that only mentions the name counts too).
+//         Default dirs are ~/.pi/agent/sessions, ~/.claude/projects, ${CODEX_HOME:-~/.codex}/sessions and
+//         ~/.cursor/projects. Cursor logs no tool results, so its errors are not counted. Point --dir at an
+//         eval's runs/ to count wrong guesses.
 // Check:  node eval.mjs check <skill-dir> [--baseline]   exits 1 on a relative link or #anchor that does not
 //         resolve, or when SKILL.md is over 10% larger than its size at the last diet.
 //         --baseline records the current size; run it when a diet ships. Sizes are kept per user, outside
@@ -173,13 +174,37 @@ function calls(tool) {
   const cli = flags.includes("--cli");
   const escaped = tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const subcommands = (args) => [...String(args.command ?? "").matchAll(new RegExp(`(?:^|[^\\w-])${escaped} ([a-z][a-z0-9.-]*)`, "g"))].map((m) => m[1]);
-  const dirs = opt("dir") ? [resolve(opt("dir"))] : [join(homedir(), ".pi", "agent", "sessions"), join(homedir(), ".claude", "projects")];
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  const dirs = opt("dir")
+    ? [resolve(opt("dir"))]
+    : [join(homedir(), ".pi", "agent", "sessions"), join(homedir(), ".claude", "projects"), join(codexHome, "sessions"), join(homedir(), ".cursor", "projects")];
   const matches = (name, args) =>
     typeof name === "string" && (cli ? subcommands(args).length > 0 : name === tool || name.endsWith(`__${tool}`));
   const seen = new Map(); // call id -> { args, error }; forked sessions repeat entries, so ids dedupe them
   const skill = opt("skill");
   const skillPath = skill && `/${skill}/SKILL.md`;
   const isRead = (name) => typeof name === "string" && /(^|__)read$/i.test(name);
+  const readsSkill = (name, args) =>
+    (isRead(name) && String(args.path ?? args.file_path ?? "").endsWith(skillPath)) ||
+    (name === "Skill" && String(args.skill ?? "").split(":").pop() === skill) || // Claude Code loads a skill through its Skill tool
+    String(args.command ?? "").includes(skillPath);
+  // Codex shell calls come in several shapes; each becomes { command: "<shell text>" } so --cli and --skill see them.
+  const codexCall = (p) => {
+    if (p.type === "custom_tool_call") {
+      if (p.name !== "exec") return { input: p.input };
+      const cmds = [...String(p.input).matchAll(/\bcmd"?\s*:\s*"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
+      return { command: cmds.join("\n") };
+    }
+    let args;
+    try {
+      args = JSON.parse(p.arguments);
+    } catch {
+      return {};
+    }
+    if (!args || typeof args !== "object") return {};
+    if (Array.isArray(args.command)) return { ...args, command: args.command.at(-1) };
+    return args.cmd !== undefined && args.command === undefined ? { ...args, command: args.cmd } : args;
+  };
   // A Pi fork repeats its parent's entries, so sessions are counted by their root file.
   const using = new Set(), reading = new Set();
   const files = [];
@@ -195,22 +220,37 @@ function calls(tool) {
   dirs.forEach(walk);
   for (const file of files) {
     if (!existsSync(file)) continue;
-    const root = file.replace(/\.jsonl$/, "").split("/forks/")[0];
-    for (const line of readFileSync(file, "utf8").split("\n")) {
-      if (!line.includes(tool) && !line.includes('"tool_result"') && !(skillPath && line.includes(skillPath))) continue;
-      let m;
+    // Cursor keeps a session's subagents in <session>/subagents/; count them with their session.
+    const root = file.match(/^(.*\/agent-transcripts\/[^/]+)\//)?.[1] ?? file.replace(/\.jsonl$/, "").split("/forks/")[0];
+    const lines = readFileSync(file, "utf8").split("\n");
+    for (const [n, line] of lines.entries()) {
+      if (!line.includes(tool) && !line.includes('"tool_result"') && !line.includes('_call_output"') && !(skillPath && line.includes(skillPath))) continue;
+      let entry;
       try {
-        m = JSON.parse(line).message;
+        entry = JSON.parse(line);
       } catch {
         continue;
       }
-      // Pi: assistant toolCall + toolResult message. Claude Code: tool_use + user tool_result.
+      const found = []; // [id, name, args]
+      // Codex: response_item payloads; a call and its output share call_id.
+      const p = entry.type === "response_item" ? entry.payload : undefined;
+      if (p?.type === "function_call" || p?.type === "custom_tool_call") found.push([p.call_id, p.name, codexCall(p)]);
+      if ((p?.type === "custom_tool_call_output" || p?.type === "function_call_output") && seen.has(p.call_id)) {
+        // Only Codex's code-mode exec reports failure in a parseable way ("Script failed").
+        const failed = Array.isArray(p.output) && String(p.output[0]?.text ?? "").startsWith("Script failed");
+        seen.get(p.call_id).error = failed ? p.output : null;
+      }
+      // Pi: assistant toolCall + toolResult message. Claude Code: tool_use + user tool_result. Cursor: tool_use without ids or results.
+      const m = entry.message;
       if (m?.role === "toolResult" && seen.has(m.toolCallId)) seen.get(m.toolCallId).error = m.isError ? m.content : null;
-      for (const c of Array.isArray(m?.content) ? m.content : []) {
+      for (const [i, c] of (Array.isArray(m?.content) ? m.content : []).entries()) {
         const args = c.type === "toolCall" ? c.arguments : c.type === "tool_use" ? c.input : undefined;
-        if (args && matches(c.name, args)) using.add(root), seen.set(c.id, { args, error: null });
-        if (args && skillPath && isRead(c.name) && String(args.path ?? args.file_path ?? "").endsWith(skillPath)) reading.add(root);
+        if (args) found.push([c.id ?? `${file}:${n}:${i}`, c.name, args]);
         if (c.type === "tool_result" && seen.has(c.tool_use_id)) seen.get(c.tool_use_id).error = c.is_error ? c.content : null;
+      }
+      for (const [id, name, args] of found) {
+        if (matches(name, args)) using.add(root), seen.set(id, { args, error: null });
+        if (skillPath && readsSkill(name, args)) reading.add(root);
       }
     }
   }
