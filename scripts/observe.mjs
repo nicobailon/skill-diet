@@ -59,7 +59,8 @@ if (args[0] === "--summary") {
 
 const real = process.env.OBSERVE_REAL;
 if (!real) {
-  const header = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1).filter((l) => l.startsWith("//"));
+  const lines = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1);
+  const header = lines.slice(0, lines.findIndex((l) => !l.startsWith("//")));
   console.error(header.map((l) => l.slice(3)).join("\n"));
   process.exit(2);
 }
