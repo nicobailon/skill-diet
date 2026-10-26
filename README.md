@@ -80,7 +80,15 @@ pi install git:github.com/nicobailon/skill-diet
 
 Update with `pi update --extensions`.
 
-Claude Code, Codex, Cursor and other agents:
+Claude Code:
+
+```
+/plugin install skill-diet --marketplace nicobailon/skill-diet
+```
+
+Update with `claude plugin update skill-diet@skill-diet`.
+
+Codex, Cursor and other agents:
 
 ```bash
 npx skills add nicobailon/skill-diet -g
@@ -90,12 +98,15 @@ This keeps one copy in `~/.agents/skills`, linked into each agent you pick. Upda
 
 To install by hand, clone the repo into `~/.agents/skills/skill-diet`, where Codex, Cursor and Pi read it, and link it into `~/.claude/skills/skill-diet` for Claude Code.
 
+Releases and what changed in each are in [CHANGELOG.md](CHANGELOG.md).
+
 ## What's inside
 
 ```
 skill-diet/
 ├── SKILL.md              the levels and the rules for every update
-├── package.json          lets `pi install` load the skill
+├── package.json          the version, and what lets `pi install` load the skill
+├── .claude-plugin/       the Claude Code plugin and its marketplace
 ├── references/           read only when needed
 │   ├── diet.md           the five steps of a diet
 │   ├── tool-skills.md    extra steps for skills that teach a tool
