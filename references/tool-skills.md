@@ -50,5 +50,5 @@ If you control the tool, fix each gap before the skill relies on it; otherwise t
 ## Logging calls
 
 - **CLI, in an eval**: `observe.mjs shim <tool>` installs a logging copy and prints how to run the eval with it; `observe.mjs --summary <log>` prints counts per version. Run `observe.mjs` alone for what each call kind means.
-- **Past sessions**: write a script that reads your agent's session logs from the last 60 days, and keep it with the adapter for the next diet. Count calls by subcommand or argument, errors by message, and the sessions that call the tool and read the skill. Forked and resumed sessions repeat earlier calls, so count each call id once; include calls made inside code-mode scripts, which some agents log inside the tool result.
+- **Past sessions**: write a script that reads your agent's session logs ([where](diet.md#1-baseline)) from the last 60 days, and keep it with the adapter for the next diet. Count calls by subcommand or argument, errors by message, and the sessions that call the tool and read the skill. Forked and resumed sessions repeat earlier calls, so count each call id once and a fork or subagent with its parent session; include calls made inside code-mode scripts, which some agents log inside the tool result.
 - **API or SDK**: count endpoint paths or function names in the code the agent wrote, from the session log.

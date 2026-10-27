@@ -27,9 +27,9 @@ Stop at the first step that handles the change.
 4. **Pick its level.**
 5. **Write the rule, not the story.** One positive rule under a short name; the incident goes in the commit message.
 
-**When code changes** a name or behavior the skill relies on, update the skill in the same change. Index new public operations by name only, unless agents will call them often. Run the skill's coverage check, or add one if the drift could recur.
+**When code changes** a name or behavior the skill relies on, update the skill in the same change. Index new public operations by name only, unless agents will call them often. Run the skill's coverage check, or add one if drift could recur.
 
-**Budget:** put `SKILL.md`'s size before and after in the commit message, and offset growth with a cut. When it is over 10% larger than at its last diet commit, or one idea appears in two places, do a full diet. `node scripts/eval.mjs check <dir>` prints the size and checks links.
+**Budget:** put `SKILL.md`'s size before and after in the commit message, and offset growth with a cut. When it is over 10% larger than at its last diet commit, or one idea appears in two places, do a full diet. `node scripts/eval.mjs check <skill-dir>` prints the size and checks links.
 
 **Verify:** rerun the case that prompted the change in a fresh session, and any tests that assert the skill's text.
 

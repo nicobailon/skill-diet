@@ -6,7 +6,7 @@ Rewrite a whole skill onto [the levels](../SKILL.md#levels), then prove agents d
 
 Copy the skill aside as **before**. Record tokens for the `description`, `SKILL.md`, each reference, and what a typical task loads (from logs or the eval), plus any text a plugin adds to every session.
 
-List every consumer: skills that link it, code that embeds it, tests that assert its text (point them at the whole folder), and tool descriptions or prompts that name the skill. Confirm the host loads this copy and every name resolves to it. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives. Sections for a host with no sessions in its logs in the last 60 days go.
+List every consumer: skills that link it, code that embeds it, tests that assert its text (point them at the whole folder), and tool descriptions or prompts that name the skill. Confirm the host loads this copy and every name resolves to it. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives. Unless the skill is published for others, sections for a host with no sessions in its logs in the last 60 days go (Pi `~/.pi/agent/sessions`, Claude Code `~/.claude/projects`, Codex `${CODEX_HOME:-~/.codex}/sessions`, Cursor `~/.cursor/projects`).
 
 ## 2. Tools
 
@@ -44,7 +44,7 @@ Write:
 - **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home or was cut under step 4, and checks each claim in **after** against the source.
 - `check <skill-dir>` passes.
 
-Ship when `score` exits 0 and **after** uses fewer tokens per run than **before**. A MISS that holds after its rerun shows in the logs what the agent lacked: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, what moved where, and any tool change the slim skill relies on.
+Ship when `score` exits 0, and **after** uses fewer tokens per run than **before** or fixes drift that **before** had. A MISS that holds after its rerun, or a WORSE, shows in the logs what the agent lacked: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, what moved where, and any tool change the slim skill relies on.
 
 ## After the diet
 

@@ -11,8 +11,9 @@
 //         the agent quotes a line only its copy of the skill holds, says it has no skill when given none, and
 //         runs a shell command.
 // Score:  node eval.mjs score <dir> [--detail]   exits 1 on any MISS (before passed a task on every run, after on
-//         none) or WARN (a run read the skill from outside sk/<version>, a task fails in every version, or under
-//         half the runs given the skill read it).
+//         none), WORSE (after's pass rate is lower by more than chance explains) or WARN (a run read the skill from
+//         outside sk/<version>, a task fails in every version or has runs but left tasks.json, or under half the
+//         runs given the skill read it).
 // Check:  node eval.mjs check <skill-dir>   prints SKILL.md's size and exits 1 on a relative link or #anchor that
 //         does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
@@ -213,6 +214,7 @@ async function run(dir) {
   for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r, folder: join(dir, "runs", `${v}-${t.id}-${r}`) });
   const todo = jobs.filter((job) => !existsSync(join(job.folder, "result.json")));
   console.log(`${todo.length} sessions to run (${versions.length} versions × ${tasks.length} tasks × ${runs} runs, ${jobs.length - todo.length} done), after 3 to calibrate`);
+  if (!todo.length) return;
   await calibrate(dir);
   await pool(todo, (job) => one(dir, job));
 }
@@ -255,7 +257,10 @@ function score(dir) {
     if (!existsSync(join(out, "result.json"))) continue;
     const res = JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
     const t = tasks[res.task];
-    if (!t) continue;
+    if (!t) {
+      if (!opt("tasks")) flag(`WARN runs/${name}: task ${res.task} is not in tasks.json; only a task that fails in every version may go, with its runs`);
+      continue;
+    }
     const unquote = (s) => s.replace(/["']/g, "");
     const text = unquote(res.answer);
     const code = unquote(
@@ -299,16 +304,23 @@ function score(dir) {
   }
   for (const id of Object.keys(tasks)) {
     const runs = versions.flatMap((v) => rows[v].filter((x) => x.task === id));
-    if (runs.length && !runs.some((x) => x.ok)) flag(`WARN ${id} fails in every version: check the task, the setup, and whether any version read the skill`);
+    if (runs.length && !runs.some((x) => x.ok)) flag(`WARN ${id} fails in every version, so it can't tell them apart: fix it and rerun it in every version, or drop it with its runs`);
     const before = rows.before?.filter((x) => x.task === id) ?? [];
     const after = rows.after?.filter((x) => x.task === id) ?? [];
     // Two equally good versions split all-vs-none by chance in at most 1 task in 64 at 3 runs, so a MISS is rerun first.
     if (before.length && after.length && before.every((x) => x.ok) && !after.some((x) => x.ok))
-      flag(`MISS ${id}: before passed every run, after none; rerun it with --tasks ${id} --runs 6, and if it holds, its logs show what after lacks`);
+      flag(`MISS ${id}: before passed every run, after none; rerun it with --tasks ${id} --versions before,after --runs 6, and if it holds, its logs show what after lacks`);
+  }
+  // A drop within two standard errors is noise at these run counts; a bigger one is a worse skill.
+  if (rows.before && rows.after) {
+    const rate = (r) => r.filter((x) => x.ok).length / r.length;
+    const [b, a] = [rate(rows.before), rate(rows.after)];
+    const se = Math.sqrt((b * (1 - b)) / rows.before.length + (a * (1 - a)) / rows.after.length);
+    if (b - a > 2 * se) flag(`WORSE after passed ${Math.round(a * 100)}% of runs, before ${Math.round(b * 100)}%: more than chance explains; after's failing outputs show what it lacks`);
   }
   const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]).filter((x) => x.reads);
   const read = skilled.filter((x) => x.reads.length).length;
-  if (read < skilled.length / 2) flag(`WARN only ${read} of ${skilled.length} runs given the skill read it, so the scores mostly measure the tool's own text; also run without the tool to see the skill once read`);
+  if (read < skilled.length / 2) flag(`WARN only ${read} of ${skilled.length} runs given the skill read it, so the scores mostly measure the tool's own text; to measure the skill, rerun in a new eval folder with prompts that name it`);
   for (const v of versions.filter((v) => v !== "none")) {
     const counts = {};
     for (const x of rows[v]) for (const p of x.reads ?? []) counts[p] = (counts[p] ?? 0) + 1;
