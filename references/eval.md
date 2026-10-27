@@ -6,7 +6,7 @@
 
 ## Tasks
 
-10–15 one-line requests sampled from real session logs, pointed at a fixture, each with its expected outcome. Cover every case in the `SKILL.md` link list, one task per "don't" rule, and each risky area.
+10–15 one-line requests sampled from real session logs, including any case the user names or just used the skill for, each pointed at a fixture with its expected outcome. Cover every case in the `SKILL.md` link list, one task per "don't" rule, and each risky area.
 
 Send sub-work to the cheapest model; for a task that touches a real account, score what the agent writes instead of running it.
 

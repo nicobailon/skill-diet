@@ -19,6 +19,7 @@ Ask your agent:
 > put the deploy skill on a diet
 > is this skill still accurate for the current CLI?
 > add this lesson to the deploy skill
+> put this skill on a diet, and keep what we just did working
 ```
 
 ## How it works
@@ -137,6 +138,7 @@ The test is only fair if each run sees just its own copy of the skill and every 
 ## Limitations
 
 - The before/after test runs real agent sessions, so it costs time and tokens. Run it before you ship a slimmer version, not after every update.
+- The checks cover the eval tasks and everything the old skill said. To make sure your own use is one of them, run the diet right after using the skill, or name the case when you ask.
 - Calibration checks that the agent is given only its copy of the skill and that tokens and tool calls are recorded. An agent with a shell can still find another copy on disk; the scorer warns when a run reads one. Calibration also can't check that token counts are exact; [adapter.md](references/adapter.md) says how to count them.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session logs instead.
 
