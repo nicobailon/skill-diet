@@ -41,10 +41,10 @@ Write:
 ## 5. Verify
 
 - **Behavior**: before/after runs, per [eval.md](eval.md).
-- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home or was cut under step 4, and checks each claim in **after** against the source.
+- **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home or was cut under step 4, and checks each claim in **after** against the source. For anything **after** no longer says (a rule, an example, a note) that no task covers, the reviewer writes a one-line case and runs it 3 times through the adapter with **after**. The piece goes back in unless every run gets it right.
 - `check <skill-dir>` passes.
 
-Ship when `score` exits 0 and **after** either uses fewer tokens per run than **before** or fixes drift. If a MISS survives its rerun, or `score` reports WORSE, the logs show what the agent was missing: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, what moved where, and any tool change the slim skill depends on.
+Ship when `score` exits 0 and **after** either uses fewer tokens per run than **before** or fixes drift. If a MISS survives its rerun, or `score` reports WORSE, the logs show what the agent was missing: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, what moved where, what was cut, and any tool change the slim skill depends on.
 
 ## After the diet
 
