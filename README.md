@@ -78,7 +78,7 @@ When code changes a name or behavior a skill describes, the skill is updated in 
 Pi:
 
 ```bash
-pi install git:github.com/nicobailon/skill-diet
+pi install npm:skill-diet
 ```
 
 Update with `pi update --extensions`.
