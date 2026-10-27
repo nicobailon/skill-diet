@@ -37,9 +37,9 @@ Each fact goes on the lowest level that still reaches the agent before it needs 
 
 1. Measure the skill and what a typical task loads.
 2. If the skill teaches a tool, do the extra steps below.
-3. Place each piece on a level. A skill only you start is marked user-only, so its description no longer loads in every session.
+3. Place each piece on a level. If only you ever start the skill, it gets marked user-only, so its description stops costing context in every session.
 4. Cut what the model already knows and what only a human needs, then rewrite the rest tighter.
-5. Run agents on the same tasks with the old skill, the new one, and no skill at all, and keep the new one only if it does at least as well. The tasks are written before anything is cut, a fresh session settles disputed answers without knowing which version wrote them, and the scorer fails the diet when the new skill does worse than chance explains, overall or on a task the old one always passed, so your agent can run the whole diet on its own.
+5. Run agents on the same tasks with the old skill, the new one, and no skill at all, and keep the new one only if it does at least as well. Your agent can do all of this unattended: tasks are written before anything is cut, a fresh session settles disputed answers without seeing which version wrote them, and the scorer fails the diet if the new skill does worse than chance would explain.
 
 For a skill that teaches a tool, the diet also:
 
@@ -124,10 +124,10 @@ skill-diet/
 
 The test is only fair if each run sees just its own copy of the skill and every run is measured the same way. Mistakes there don't raise errors; they give numbers that look fine. So the parts that are the same for every agent ship as code, and the part that depends on your agent is written by your agent and checked before every eval:
 
-- **Scoring is code.** Tasks, pass/fail rules, the tables and the warnings work the same for every diet and every agent. The scorer exits with an error when the slim skill does worse than chance explains, or when most runs never opened the skill, so an agent working alone knows not to ship.
+- **Scoring is code.** Tasks, pass/fail rules, the tables and the warnings work the same for every diet and every agent. It exits with an error when the slim skill does worse than chance would explain, or when most runs never opened the skill, so an agent working alone knows not to ship.
 - **Your agent writes the adapter.** It's a small script that runs one session of your agent with only one copy of the skill, and records the answer, tokens and tool calls. Your agent writes it from its own CLI's help, so it matches the version you have installed, and it lives in your eval folder, so updates don't touch it. In our tests, Claude Code and Pi each wrote one in under 4 minutes, and Codex in 7 to 16.
 - **Calibration checks it.** Before every eval, three short runs must pass: the agent quotes a line only its copy of the skill holds, says it has no skill when given none (so an installed copy can't leak in), and runs a shell command. A broken adapter stops the eval instead of skewing it.
-- **Your agent reads its own session logs.** Log formats change between agent versions, so a log reader we ship goes stale. Ours missed calls made inside Pi's code-mode scripts and counted a third too few Claude Code errors; agents reading today's logs got both right.
+- **Your agent reads its own session logs.** Log formats change between agent releases, so any log reader we ship goes stale. Ours did: it missed calls made inside Pi's code-mode scripts and undercounted Claude Code errors by a third. Agents reading today's logs got both right.
 - **Logs stay out of the agent's context.** The agent runs the scripts and reads only what they print, never the scripts or the logs:
 
 | Job | Script reads | Agent reads |
