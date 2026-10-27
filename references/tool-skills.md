@@ -44,7 +44,7 @@ If you control the tool, fix each gap before the skill relies on it; otherwise t
 
 - **Coverage**: every name in the skill resolves in the tool, every public operation is named, and every parameter and value in the cheat sheet exists. Zero misses. Save it as a script that warns, and run it after each commit to a tool you control, or when a tool you don't control changes version.
 - **Eval**: add a **none** version with only the tool's own help. Run every version against the same tool version, with whatever T4 fixes have landed. Weight tasks by the most-used calls, give every hard shape a task, and report valid first calls, wrong guesses and help KB.
-  - For a native tool, `run` drops it: pass `--tools read,<tool>` and `-- -e <extension>`, or a stub extension with the real schema whose `execute` does nothing.
+  - For a native tool, have the adapter load the tool's extension, or a stub with the real schema whose `execute` does nothing.
 - **Misses**: the logs name the operation guessed wrong. Move it into the cheat sheet or hard shapes, or improve the tool's error.
 
 ## Logging calls

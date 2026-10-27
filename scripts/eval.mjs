@@ -2,12 +2,13 @@
 // Runs the before/after eval with a coding agent and scores it.
 // Layout: <dir>/tasks.json  [{ id, prompt, must?: [regex], must_not?: [regex], setup?: "sh", check?: "sh" }]
 //         <dir>/sk/<version>/<skill>/   one skill folder per version; "none" needs no folder
-// Run:    node eval.mjs run <dir> [--agent pi|claude|codex|cursor | --cmd '<template>'] [--versions before,after,none] [--tasks a,b]
-//                       [--runs 3] [--parallel 6] [--model <id>] [--tools read] [-- extra agent args]
-//         A preset gives the agent only the version's copy of the skill and reads tokens, turns and skill
-//         reads from its output. --cmd runs any other agent: {prompt} and {skill} (the version's skill folder,
-//         empty for none) are replaced shell-quoted, and stdout plus stderr is the answer.
-//         Each run sets OBSERVE_TAGS="version=… task=… run=…" for observe.mjs.
+//         <dir>/adapter                 runs one session of your agent; references/adapter.md says how to write it
+// Run:    node eval.mjs run <dir> [--versions before,after,none] [--tasks a,b] [--runs 3] [--parallel 6] [--model <id>]
+//         calibrates the adapter, then runs every version, task and run. --model is passed to the adapter as
+//         EVAL_MODEL, and each run sets OBSERVE_TAGS="version=… task=… run=…" for observe.mjs.
+// Calibrate: node eval.mjs calibrate <dir> [--model <id>]   three short runs at once that the adapter must pass:
+//         the agent quotes a line only its copy of the skill holds, says it has no skill when given none, and
+//         runs a shell command.
 // Score:  node eval.mjs score <dir> [--detail]   also warns when a run read the skill from outside sk/<version>.
 // Calls:  node eval.mjs calls <tool> [--cli] [--days 60] [--by action] [--skill <name>] [--dir <sessions>]
 //         counts a native or MCP tool's calls in Pi, Claude Code, Codex CLI and Cursor CLI session logs:
@@ -16,201 +17,38 @@
 //         it are counted by subcommand (approximate: a command that only mentions the name counts too).
 //         Default dirs are ~/.pi/agent/sessions, ~/.claude/projects, ${CODEX_HOME:-~/.codex}/sessions and
 //         ~/.cursor/projects. Cursor logs no tool results, so its errors are not counted. Point --dir at an
-//         eval's runs/ to count wrong guesses in Pi and Claude Code runs.
+//         eval's runs/ to count wrong guesses, when the adapter keeps the agent's .jsonl output.
 // Check:  node eval.mjs check <skill-dir>   prints SKILL.md's size and exits 1 on a relative link or #anchor that
 //         does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
 // must exit 0.
-// Finished runs are kept, so rerunning `run` only fills in missing ones.
+// Finished runs are kept, so rerunning `run` only fills in missing ones. A timeout counts as a failed run; any other
+// adapter failure stops the eval.
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
-const [command, target, ...rest] = process.argv.slice(2);
-const dash = rest.indexOf("--");
-const flags = dash >= 0 ? rest.slice(0, dash) : rest;
-const extra = dash >= 0 ? rest.slice(dash + 1) : [];
+const [command, target, ...flags] = process.argv.slice(2);
 const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.indexOf(`--${name}`) + 1] : fallback);
 
-// A preset: command({ prompt, skill, out, work }) -> { cmd, args, env? }, where skill is the version's skill folder or null;
-// parse(out, stdout, skill) -> { answer, tokens: { input, output, cacheRead, cacheWrite }, turns, calls: [{ name, path?,
-// command? }] }, null where the agent doesn't report it, with paths into the skill rewritten to the skill folder;
-// optional cleanup(out) after parse, notice printed when the run starts, and parallel to cap concurrent runs.
-const tempHomes = new Map(); // run folder -> the temp home a preset made outside it, which the agent can't read
-const removeTempHome = (out) => {
-  if (tempHomes.has(out)) rmSync(tempHomes.get(out), { recursive: true, force: true });
-  tempHomes.delete(out);
-};
-// Agents report paths through the link a preset made to the version's skill, sometimes with /tmp or /var resolved
-// to /private/...; rewrite each form to the skill folder, longest first so a shorter form can't match inside one.
-function toSkillPaths(skill, link) {
-  if (!skill) return (s) => s;
-  const aliases = [...new Set([link, join(realpathSync(dirname(link)), basename(link)), realpathSync(skill)])].sort((a, b) => b.length - a.length);
-  return (s) => (s === undefined ? undefined : aliases.reduce((text, a) => text.replaceAll(a, skill), String(s)));
-}
-const jsonLines = (text) =>
-  text.split("\n").flatMap((line) => {
+// On a crash or Ctrl-C, stop the adapters still running and remove their work dirs. SIGTERM lets an adapter delete what
+// it made outside its out-dir, such as a copied login; adapters are detached, so they outlive this process to do it.
+const children = new Set(), works = new Set();
+process.on("exit", () => {
+  for (const child of children) {
     try {
-      return [JSON.parse(line)];
-    } catch {
-      return [];
-    }
-  });
-function skillName(folder) {
-  return readFileSync(join(folder, "SKILL.md"), "utf8").match(/^name:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, "");
-}
-const presets = {
-  pi: {
-    command: ({ prompt, skill, out }) => ({
-      cmd: "pi",
-      args: ["-p", "-ne", "-nc", "-ns", "-np", "--tools", opt("tools", "read"), ...(skill ? ["--skill", skill] : []), "--session-dir", join(out, "sessions"), ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
-    }),
-    parse: (out, stdout) => {
-      const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-      let turns = 0;
-      const calls = [];
-      const sessions = join(out, "sessions");
-      for (const f of existsSync(sessions) ? readdirSync(sessions).filter((f) => f.endsWith(".jsonl")) : []) {
-        for (const { message: m } of jsonLines(readFileSync(join(sessions, f), "utf8"))) {
-          if (m?.role !== "assistant") continue;
-          turns++;
-          for (const k of Object.keys(tokens)) tokens[k] += m.usage?.[k] ?? 0;
-          for (const c of m.content ?? []) if (c.type === "toolCall") calls.push({ name: c.name, path: c.arguments?.path, command: c.arguments?.command });
-        }
-      }
-      return { answer: stdout, tokens, turns, calls };
-    },
-  },
-  claude: {
-    // Project settings only, so the user's installed skills stay out; --add-dir loads skills from
-    // <dir>/.claude/skills/, where the version's folder is linked.
-    command: ({ prompt, skill, out }) => {
-      const dirs = [];
-      if (skill) {
-        const root = join(out, "claude");
-        mkdirSync(join(root, ".claude", "skills"), { recursive: true });
-        const link = join(root, ".claude", "skills", basename(skill));
-        if (!existsSync(link)) symlinkSync(skill, link);
-        dirs.push("--add-dir", root);
-      }
-      const tools = [...new Set([...opt("tools", "read").split(",").map((t) => t[0].toUpperCase() + t.slice(1)), "Skill"])].join(",");
-      return {
-        cmd: "claude",
-        args: ["-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--setting-sources", "project", ...dirs, "--tools", tools, "--allowedTools", tools, "--permission-mode", "dontAsk", ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
-        env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }, // keeps runs out of ~/.claude/projects
-      };
-    },
-    parse: (out, stdout, skill) => {
-      const calls = [];
-      let answer = "", turns = null, tokens = null;
-      const toSkill = toSkillPaths(skill, skill && join(out, "claude", ".claude", "skills", basename(skill)));
-      const name = skill && (skillName(skill) ?? basename(skill));
-      for (const e of jsonLines(stdout)) {
-        // Assistant events carry usage from the start of each message; the result has the final totals.
-        if (e.type === "result") {
-          const u = e.usage ?? {};
-          answer = e.result ?? "";
-          turns = e.num_turns;
-          tokens = { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 };
-        }
-        if (e.type !== "assistant") continue;
-        for (const c of e.message.content ?? []) {
-          if (c.type !== "tool_use") continue;
-          // The Skill tool loads a SKILL.md by name.
-          if (c.name === "Skill") calls.push({ name: c.name, path: c.input?.skill === name ? join(skill, "SKILL.md") : `/${c.input?.skill}/SKILL.md` });
-          else calls.push({ name: c.name, path: toSkill(c.input?.file_path ?? c.input?.path), command: toSkill(c.input?.command) });
-        }
-      }
-      return { answer, tokens, turns, calls };
-    },
-  },
-  codex: {
-    notice: "codex: each run copies your Codex login file into a temp folder deleted after the run; a token refresh during a run updates only that copy",
-    // A fresh HOME and CODEX_HOME hide installed copies of the skill (~/.agents/skills, ~/.codex/skills) and hold the
-    // version's skill and a copy of the login. Both live outside the run folder, which the agent can read.
-    command: ({ prompt, skill, out, work }) => {
-      const root = mkdtempSync(join(tmpdir(), "skill-diet-codex-"));
-      tempHomes.set(out, root);
-      const codexHome = join(root, "codex-home");
-      mkdirSync(join(codexHome, "skills"), { recursive: true });
-      mkdirSync(join(root, "home"), { recursive: true });
-      copyFileSync(join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json"), join(codexHome, "auth.json"));
-      chmodSync(join(codexHome, "auth.json"), 0o600);
-      if (skill) symlinkSync(skill, join(codexHome, "skills", basename(skill)));
-      return {
-        cmd: "codex",
-        args: ["exec", "--json", "-s", "read-only", "--skip-git-repo-check", "-C", work, ...(opt("model") ? ["-m", opt("model")] : []), ...extra, prompt],
-        env: { HOME: join(root, "home"), CODEX_HOME: codexHome },
-      };
-    },
-    parse: (out, stdout, skill) => {
-      const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-      const calls = [];
-      let answer = "";
-      const toSkill = toSkillPaths(skill, skill && join(tempHomes.get(out), "codex-home", "skills", basename(skill)));
-      for (const e of jsonLines(stdout)) {
-        if (e.type === "item.completed" && e.item.type === "agent_message") answer = e.item.text;
-        if (e.type === "item.completed" && e.item.type === "command_execution") calls.push({ name: "shell", command: toSkill(e.item.command) });
-        // input_tokens includes the cached ones; output_tokens already includes reasoning.
-        if (e.type === "turn.completed") {
-          const u = e.usage;
-          tokens.input += u.input_tokens - u.cached_input_tokens;
-          tokens.cacheRead += u.cached_input_tokens;
-          tokens.cacheWrite += u.cache_write_input_tokens ?? 0;
-          tokens.output += u.output_tokens;
-        }
-      }
-      return { answer, tokens, turns: null, calls }; // --json has no request count
-    },
-    cleanup: removeTempHome,
-  },
-  cursor: {
-    // A temp HOME holds the version's skill; the Keychains link keeps the macOS login.
-    parallel: 1, // a second cursor-agent starting at the same time finds the login keychain locked
-    command: ({ prompt, skill, out, work }) => {
-      const home = mkdtempSync(join(tmpdir(), "skill-diet-cursor-"));
-      tempHomes.set(out, home);
-      mkdirSync(join(home, ".cursor", "skills"), { recursive: true });
-      if (skill) symlinkSync(skill, join(home, ".cursor", "skills", basename(skill)));
-      if (existsSync(join(homedir(), "Library", "Keychains"))) {
-        mkdirSync(join(home, "Library"));
-        symlinkSync(join(homedir(), "Library", "Keychains"), join(home, "Library", "Keychains"));
-      }
-      return {
-        cmd: "cursor-agent",
-        args: ["-p", "--output-format", "stream-json", "--trust", "--force", "--workspace", work, ...(opt("model") ? ["--model", opt("model")] : []), ...extra, prompt],
-        env: { HOME: home },
-      };
-    },
-    parse: (out, stdout, skill) => {
-      let answer = "", tokens = null;
-      const calls = [], modelCalls = new Set();
-      const toSkill = toSkillPaths(skill, skill && join(tempHomes.get(out), ".cursor", "skills", basename(skill)));
-      for (const e of jsonLines(stdout)) {
-        if (e.type === "assistant" && e.model_call_id) modelCalls.add(e.model_call_id);
-        if (e.type === "tool_call" && e.subtype === "completed") {
-          const [kind, call] = Object.entries(e.tool_call)[0];
-          calls.push({ name: kind, path: toSkill(call.args?.path), command: toSkill(call.args?.command) });
-        }
-        if (e.type === "result") {
-          const u = e.usage ?? {};
-          answer = e.result ?? "";
-          tokens = { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0, cacheRead: u.cacheReadTokens ?? 0, cacheWrite: u.cacheWriteTokens ?? 0 };
-        }
-      }
-      return { answer, tokens, turns: modelCalls.size || null, calls };
-    },
-    cleanup: removeTempHome,
-  },
-};
-
-const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-const active = new Set(); // { out, child? } for each run between preset.command and its cleanup
+      process.kill(-child.pid, "SIGTERM");
+    } catch {}
+  }
+  for (const work of works) rmSync(work, { recursive: true, force: true });
+});
+for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => process.exit(130));
 
 if (command === "run" && target) await run(resolve(target));
+else if (command === "calibrate" && target) await calibrate(resolve(target));
 else if (command === "score" && target) score(resolve(target));
 else if (command === "calls" && target) calls(target);
 else if (command === "check" && target) check(resolve(target));
@@ -227,21 +65,6 @@ function loadTasks(dir) {
   return only ? tasks.filter((t) => only.split(",").includes(t.id)) : tasks;
 }
 
-function pickPreset() {
-  if (opt("cmd")) {
-    const template = opt("cmd");
-    if (!template.includes("{prompt}")) throw new Error("--cmd needs {prompt} in its template");
-    return {
-      // One pass, with a function, so a prompt's own "$&" or "{skill}" is left alone.
-      command: ({ prompt, skill }) => ({ cmd: "sh", args: ["-c", template.replace(/\{(prompt|skill)\}/g, (_, k) => quote(k === "prompt" ? prompt : (skill ?? "")))] }),
-      parse: (out, stdout) => ({ answer: stdout, tokens: null, turns: null, calls: null }),
-    };
-  }
-  const preset = presets[opt("agent", "pi")];
-  if (!preset) throw new Error(`unknown --agent ${opt("agent")}; known: ${Object.keys(presets).join(", ")}, or pass --cmd '<template>'`);
-  return preset;
-}
-
 function skillFolder(dir, v) {
   if (v === "none") return null;
   const base = join(dir, "sk", v);
@@ -250,84 +73,187 @@ function skillFolder(dir, v) {
   return join(base, names[0]);
 }
 
-async function run(dir) {
-  const tasks = loadTasks(dir);
-  const versions = opt("versions", "before,after,none").split(",");
-  const runs = Number(opt("runs", "3"));
-  const preset = pickPreset();
-  if (preset.notice) console.log(preset.notice);
-  // On a crash or Ctrl-C, stop the agents still running and remove their temp folders.
-  process.on("exit", () => {
-    for (const { child, out, work } of active) {
-      try {
-        if (child) process.kill(-child.pid, "SIGKILL");
-      } catch {}
-      preset.cleanup?.(out);
-      rmSync(work, { recursive: true, force: true });
-    }
-  });
-  for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => process.exit(130));
-  const jobs = [];
-  for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r });
-  let next = 0;
-  const worker = async () => {
-    while (next < jobs.length) await one(dir, preset, jobs[next++]);
-  };
-  await Promise.all(Array.from({ length: Number(preset.parallel ?? opt("parallel", "6")) }, worker));
+// The first version folder's skill; calibration copies its front matter and score finds reads by its folder name.
+function anySkill(dir) {
+  const versions = readdirSync(join(dir, "sk"), { withFileTypes: true }).filter((d) => d.isDirectory());
+  const skill = versions.map((d) => skillFolder(dir, d.name)).find(Boolean);
+  if (!skill) throw new Error(`${join(dir, "sk")} holds no <version>/<skill>/ folder`);
+  return skill;
 }
 
-function one(dir, preset, { v, t, r }) {
-  const out = join(dir, "runs", `${v}-${t.id}-${r}`);
-  if (existsSync(join(out, "result.json"))) return;
-  mkdirSync(out, { recursive: true });
-  // The agent works outside the eval folder, where it could find other versions' skills and other runs' answers.
-  const work = mkdtempSync(join(tmpdir(), "skill-diet-work-"));
-  const entry = { out, work };
-  active.add(entry);
-  if (t.setup && spawnSync("sh", ["-c", t.setup], { cwd: work, stdio: "inherit" }).status !== 0) throw new Error(`setup failed: ${t.id}`);
-  const skill = skillFolder(dir, v);
-  const { cmd, args, env } = preset.command({ prompt: t.prompt, skill, out, work });
-  const fd = openSync(join(out, "stdout.txt"), "w");
-  const start = Date.now();
+// Runs fn on each item, at most --parallel at once; resolves to the results in item order.
+async function pool(items, fn) {
+  const results = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Number(opt("parallel", "6")) }, worker));
+  return results;
+}
+
+// Every run and calibration starts the adapter the same way: <dir>/adapter <skill folder or ""> <prompt> <out> <work>.
+// Resolves to its exit code, or "timeout" after 10 minutes.
+function session(dir, { skill, prompt, out, work, tags }) {
+  const adapter = join(dir, "adapter");
+  const log = openSync(join(out, "adapter.log"), "w");
+  const env = { ...process.env, ...(opt("model") ? { EVAL_MODEL: opt("model") } : {}), OBSERVE_TAGS: tags };
   return new Promise((done) => {
-    const child = spawn(cmd, args, { cwd: work, env: { ...process.env, ...env, OBSERVE_TAGS: `version=${v} task=${t.id} run=${r}` }, stdio: ["ignore", fd, fd], detached: true });
-    entry.child = child;
+    const child = spawn(adapter, [skill ?? "", prompt, out, work], { cwd: work, env, stdio: ["ignore", log, log], detached: true });
+    children.add(child);
     let exit = null;
     const timer = setTimeout(() => {
       exit = "timeout";
-      process.kill(-child.pid, "SIGKILL");
+      process.kill(-child.pid, "SIGTERM");
+      setTimeout(() => {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {}
+      }, 10_000).unref();
     }, 600_000);
+    child.on("error", (e) => {
+      throw new Error(`can't start ${adapter}: ${e.message}; write it as references/adapter.md says`);
+    });
     child.on("exit", (code) => {
       clearTimeout(timer);
-      exit ??= code;
-      const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
-      rmSync(work, { recursive: true, force: true });
-      const wallMs = Date.now() - start;
-      const record = { version: v, task: t.id, run: r, exit, check, wallMs, ...preset.parse(out, readFileSync(join(out, "stdout.txt"), "utf8"), skill) };
-      // A clean exit with no usage means the agent's output format changed; a 0 in the table would hide that.
-      const u = record.tokens;
-      if (exit === 0 && !opt("cmd") && !(u && u.input + u.output + u.cacheRead + u.cacheWrite > 0)) throw new Error(`${cmd} exited 0 but no token usage was found in ${out}; its output format may have changed`);
-      preset.cleanup?.(out);
-      active.delete(entry);
-      writeFileSync(join(out, "result.json"), JSON.stringify(record));
-      console.log(v, t.id, r, exit, `${Math.round(wallMs / 1000)}s`);
-      done();
+      closeSync(log);
+      children.delete(child);
+      done(exit ?? code);
     });
   });
+}
+
+// The adapter is the user's code, so its result.json is checked against references/adapter.md.
+function readResult(out, exit) {
+  const file = join(out, "result.json");
+  if (exit !== 0 || !existsSync(file)) throw new Error(`adapter exited ${exit}${existsSync(file) ? "" : " without writing result.json"}; its output is in ${out}`);
+  const r = JSON.parse(readFileSync(file, "utf8"));
+  const ok =
+    typeof r.answer === "string" &&
+    ["input", "output", "cacheRead", "cacheWrite"].every((k) => Number.isFinite(r.tokens?.[k])) &&
+    r.tokens.output > 0 &&
+    r.tokens.input + r.tokens.cacheRead > 0 &&
+    (r.turns == null || Number.isFinite(r.turns)) &&
+    Array.isArray(r.calls) &&
+    r.calls.every((c) => typeof c?.name === "string");
+  if (!ok) throw new Error(`${file} needs answer, non-zero tokens { input, output, cacheRead, cacheWrite }, turns and calls [{ name, path?, command? }]`);
+  return { answer: r.answer, tokens: r.tokens, turns: r.turns ?? null, calls: r.calls };
+}
+
+async function calibrate(dir) {
+  const real = anySkill(dir);
+  const name = basename(real);
+  const front = readFileSync(join(real, "SKILL.md"), "utf8").match(/^---\n[\s\S]*?\n---\n/)?.[0];
+  if (!front) throw new Error(`${join(real, "SKILL.md")} has no front matter`);
+  // A fresh line under the real skill's name and description: only the copy given to the adapter holds it, and an
+  // installed copy of the skill shows up in the run that gets none.
+  const canary = `CANARY-${Math.random().toString(36).slice(2, 10)}`;
+  const base = join(dir, "calibration");
+  rmSync(base, { recursive: true, force: true });
+  const skill = join(base, "copy", name);
+  mkdirSync(skill, { recursive: true });
+  writeFileSync(join(skill, "SKILL.md"), `${front}${canary}\n`);
+  const read = join(skill, "SKILL.md");
+  const cases = [
+    {
+      id: "skill",
+      skill,
+      prompt: `Use the ${name} skill. Reply with only the first line of its body (the first line after the front matter), nothing else.`,
+      checks: (answer, texts) => [
+        [answer.includes(canary), `the agent quotes ${canary}, a line only its copy of the skill holds`],
+        [texts.some((s) => s.includes(read)), `calls show it reading ${read}`],
+      ],
+    },
+    {
+      id: "none",
+      prompt: `If you have a skill named ${name}, reply with only the first line of its body. Otherwise reply exactly NO-SKILL.`,
+      checks: (answer, texts) => [
+        [answer.includes("NO-SKILL"), "given no skill, the agent has none (a quoted line means an installed copy is visible)"],
+        [!texts.some((s) => s.includes(`/${name}/SKILL.md`)), `calls read no ${name}/SKILL.md`],
+      ],
+    },
+    {
+      id: "shell",
+      prompt: "Run this shell command and reply with only its output: echo calib-$((6*7))",
+      checks: (answer, texts) => [
+        [answer.includes("calib-42"), "the agent runs a shell command and replies with its output"],
+        [texts.some((s) => s.includes("echo calib-")), "calls record the shell command"],
+      ],
+    },
+  ];
+  // As many at once as the eval runs, so runs that share anything fail here.
+  const lines = await pool(cases, async (c) => {
+    const out = join(base, c.id);
+    mkdirSync(out);
+    const work = mkdtempSync(join(tmpdir(), "skill-diet-work-"));
+    works.add(work);
+    const exit = await session(dir, { skill: c.skill, prompt: c.prompt, out, work, tags: `version=calibrate task=${c.id} run=0` });
+    rmSync(work, { recursive: true, force: true });
+    works.delete(work);
+    let r;
+    try {
+      r = readResult(out, exit);
+    } catch (e) {
+      return [[false, e.message]];
+    }
+    const texts = r.calls.flatMap((x) => [x.path, x.command]).filter(Boolean).map(String);
+    return c.checks(r.answer, texts);
+  });
+  const results = lines.flatMap((l, i) => l.map(([ok, what]) => [ok, `${cases[i].id}: ${what}`]));
+  for (const [ok, what] of results) console.log(`${ok ? "PASS" : "FAIL"} ${what}`);
+  if (results.some(([ok]) => !ok)) {
+    console.log(`calibration failed: fix ${join(dir, "adapter")}; each run's output is in ${base}`);
+    process.exit(1);
+  }
+  console.log("calibration passed");
+}
+
+async function run(dir) {
+  await calibrate(dir);
+  const tasks = loadTasks(dir);
+  const versions = opt("versions", "before,after,none").split(",");
+  const runs = Number(opt("runs", "3"));
+  const jobs = [];
+  for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r });
+  await pool(jobs, (job) => one(dir, job));
+}
+
+async function one(dir, { v, t, r }) {
+  const folder = join(dir, "runs", `${v}-${t.id}-${r}`);
+  if (existsSync(join(folder, "result.json"))) return;
+  // The adapter writes into agent/; result.json beside it marks the run finished, so a run cut off part-way starts over.
+  const out = join(folder, "agent");
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  // The agent works outside the eval folder, where it could find other versions' skills and other runs' answers.
+  const work = mkdtempSync(join(tmpdir(), "skill-diet-work-"));
+  works.add(work);
+  if (t.setup && spawnSync("sh", ["-c", t.setup], { cwd: work, stdio: "inherit" }).status !== 0) throw new Error(`setup failed: ${t.id}`);
+  const start = Date.now();
+  const exit = await session(dir, { skill: skillFolder(dir, v), prompt: t.prompt, out, work, tags: `version=${v} task=${t.id} run=${r}` });
+  const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
+  rmSync(work, { recursive: true, force: true });
+  works.delete(work);
+  const wallMs = Date.now() - start;
+  // A timeout counts as a failed run. Any other adapter failure stops the eval, and rerunning retries the run.
+  const result = exit === "timeout" ? { answer: "", tokens: null, turns: null, calls: null } : readResult(out, exit);
+  writeFileSync(join(folder, "result.json"), JSON.stringify({ version: v, task: t.id, run: r, exit, check, wallMs, ...result }));
+  console.log(v, t.id, r, exit, `${Math.round(wallMs / 1000)}s`);
 }
 
 function score(dir) {
   const tasks = Object.fromEntries(loadTasks(dir).map((t) => [t.id, t]));
   const rows = {};
-  const folder = (existsSync(join(dir, "sk")) ? readdirSync(join(dir, "sk"), { withFileTypes: true }) : []).filter((d) => d.isDirectory()).map((d) => skillFolder(dir, d.name)).find(Boolean);
-  const skillDir = folder && `/${basename(folder)}/`;
+  const skillDir = `/${basename(anySkill(dir))}/`;
   for (const name of existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).sort() : []) {
     const out = join(dir, "runs", name);
     if (!existsSync(join(out, "result.json"))) continue;
     const res = JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
     const t = tasks[res.task];
     if (!t) continue;
-    if (!("answer" in res)) throw new Error(`${out} was recorded by an older eval.mjs; delete ${join(dir, "runs")} and run again`);
     const unquote = (s) => s.replace(/["']/g, "");
     const text = unquote(res.answer);
     const code = unquote(
@@ -341,7 +267,7 @@ function score(dir) {
     // Skill files the agent opened, from any sk/<version>/<skill>/, by path relative to the skill folder.
     const texts = (res.calls ?? []).flatMap((c) => [c.path, c.command]).filter(Boolean).map(String);
     const reads = res.calls && [...new Set(texts.flatMap((s) => [...s.matchAll(/\/sk\/[^/]+\/[^/\s'"]+\/([^\s'"`;|&)]+)/g)].map((m) => m[1])))];
-    const outside = skillDir && texts.flatMap((s) => s.split(/[\s'"`;|&()]+/)).find((p) => p.includes(skillDir) && !p.includes(`/sk/${res.version}${skillDir}`));
+    const outside = texts.flatMap((s) => s.split(/[\s'"`;|&()]+/)).find((p) => p.includes(skillDir) && !p.includes(`/sk/${res.version}${skillDir}`));
     if (outside) console.log(`WARN ${res.version}/${res.task}: read ${outside} from outside sk/${res.version}`);
     const tokens = res.tokens && res.tokens.input + res.tokens.output + res.tokens.cacheRead + res.tokens.cacheWrite;
     const ok = res.exit === 0 && res.check !== false && !missing.length && !banned.length;
@@ -349,8 +275,11 @@ function score(dir) {
     if (flags.includes("--detail") && !ok) console.log(`FAIL ${name}  missing=${JSON.stringify(missing)} banned=${JSON.stringify(banned)} exit=${res.exit} check=${res.check}`);
   }
   const versions = Object.keys(rows).sort((a, b) => ["before", "after", "none"].indexOf(a) - ["before", "after", "none"].indexOf(b));
-  // An agent whose output doesn't report a number shows "–" instead of a misleading 0.
-  const avg = (r, f, digits) => (r.some((x) => f(x) == null) ? "–" : (r.reduce((s, x) => s + f(x), 0) / r.length).toFixed(digits));
+  // Timed-out runs, and agents that don't report turns, are left out of a column instead of counting as 0.
+  const avg = (r, f, digits) => {
+    const xs = r.map(f).filter((x) => x != null);
+    return xs.length ? (xs.reduce((s, x) => s + x, 0) / xs.length).toFixed(digits) : "–";
+  };
   console.log("\n| version | success | tokens/run | turns/run | skill files read/run | wall s/run |\n|---|---|---|---|---|---|");
   for (const v of versions) {
     const r = rows[v];
@@ -371,7 +300,7 @@ function score(dir) {
     if (runs.length && !runs.some((x) => x.ok)) console.log(`WARN ${id} fails in every version: check the task, the setup, and whether any version read the skill`);
   }
   const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]);
-  if (skilled.length && skilled.every((x) => x.reads?.length === 0)) console.log("WARN no run read the skill, so the scores measure the tool's own text; also run without the tool to see the skill once read");
+  if (skilled.length && skilled.every((x) => !x.reads?.length)) console.log("WARN no run read the skill, so the scores measure the tool's own text; also run without the tool to see the skill once read");
   for (const v of versions.filter((v) => v !== "none")) {
     const counts = {};
     for (const x of rows[v]) for (const p of x.reads ?? []) counts[p] = (counts[p] ?? 0) + 1;
@@ -425,7 +354,7 @@ function calls(tool) {
       if (!existsSync(p)) continue; // live sessions can delete temp files mid-scan
       const s = statSync(p);
       if (s.isDirectory()) walk(p);
-      else if ((n.endsWith(".jsonl") || n === "stdout.txt") && s.mtimeMs >= since) files.push(p); // stdout.txt: a Claude eval run
+      else if (n.endsWith(".jsonl") && s.mtimeMs >= since) files.push(p);
     }
   };
   dirs.forEach(walk);
