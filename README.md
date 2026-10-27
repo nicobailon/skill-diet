@@ -113,16 +113,31 @@ skill-diet/
 │   ├── diet.md           the five steps of a diet
 │   ├── tool-skills.md    extra steps for skills that teach a tool
 │   ├── formats.md        how to write commands compactly
-│   └── eval.md           the before/after test
+│   ├── eval.md           the before/after test
+│   └── adapter.md        how your agent writes the script that runs it in the test
 └── scripts/
     ├── observe.mjs       wraps a CLI so every call an agent makes during the test is logged
-    └── eval.mjs          runs and scores the before/after test; counts a tool's calls, errors and skill reads in past sessions; checks a skill's links and prints its size
+    └── eval.mjs          checks your agent's adapter, then runs and scores the before/after test; counts a tool's calls, errors and skill reads in past sessions; checks a skill's links and prints its size
 ```
+
+### Why scripts, plus an adapter your agent writes
+
+The test is only fair if each run sees just its own copy of the skill and every run is measured the same way. Mistakes there don't raise errors; they give numbers that look fine. So the parts that are the same for every agent ship as code, and the part that depends on your agent is written by your agent and checked before every eval:
+
+- **Scoring is code.** Tasks, pass/fail rules, the tables and the warnings work the same for every diet and every agent.
+- **Your agent writes the adapter.** It's a small script that runs one session of your agent with only one copy of the skill, and records the answer, tokens and tool calls. Your agent writes it from its own CLI's help, so it matches the version you have installed, and it lives in your eval folder, so updates don't touch it. In our tests, Claude Code and Pi each wrote one in under 4 minutes, and Codex in 7 to 16.
+- **Calibration checks it.** Before every eval, three short runs must pass: the agent quotes a line only its copy of the skill holds, says it has no skill when given none (so an installed copy can't leak in), and runs a shell command. A broken adapter stops the eval instead of skewing it.
+- **Logs stay out of the agent's context.** The agent runs the scripts and reads only what they print, never the scripts or the logs:
+
+| Job | Script reads | Agent reads |
+| --- | --- | --- |
+| score one diet's test (45 runs) | ~2 MB of logs | a 600-byte table |
+| count a tool's calls in past sessions | ~17,000 sessions, ~3 GB | under 2 KB |
 
 ## Limitations
 
 - The before/after test runs real agent sessions, so it costs time and tokens. Run it before you ship a slimmer version, not after every update.
-- The test runner has presets for Pi, Claude Code, Codex and Cursor. Any other agent runs through `--cmd` with its headless command, scored on success and time only, and you set up its skill isolation yourself.
+- Calibration checks that the agent is given only its copy of the skill and that tokens and tool calls are recorded. An agent with a shell can still find another copy on disk; the scorer warns when a run reads one. Calibration also can't check that token counts are exact; [adapter.md](references/adapter.md) says how to count them.
 - Reading past sessions works with Pi, Claude Code, Codex CLI and Cursor CLI logs. Counts are approximate: a shell command that only mentions a tool's name counts too. Cursor's logs have no tool results, so its errors aren't counted.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session logs instead.
 
