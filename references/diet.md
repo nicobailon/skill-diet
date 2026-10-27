@@ -6,7 +6,7 @@ Rewrite a whole skill onto [the levels](../SKILL.md#levels), then prove agents d
 
 Copy the skill aside as **before**. Record tokens for the `description`, `SKILL.md`, each reference, and what a typical task loads (from logs or the eval), plus any text a plugin adds to every session.
 
-List every consumer: skills that link it, code that embeds it, tests that assert its text (point them at the whole folder), and tool descriptions or prompts that name the skill. Confirm the host loads this copy and every name resolves to it. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives. Ask the owner which hosts they still use; sections for dropped ones go.
+List every consumer: skills that link it, code that embeds it, tests that assert its text (point them at the whole folder), and tool descriptions or prompts that name the skill. Confirm the host loads this copy and every name resolves to it. Flag any file over the host's read limit (Pi: 50KB); its tail never arrives. Drop sections for a host with no sessions in the last 60 days (logs: Pi `~/.pi/agent/sessions`, Claude Code `~/.claude/projects`, Codex `${CODEX_HOME:-~/.codex}/sessions`, Cursor `~/.cursor/projects`), unless other people install the skill.
 
 ## 2. Tools
 
@@ -14,7 +14,11 @@ If the skill teaches a tool (CLI, API, SDK, MCP server, native tool, or a script
 
 ## 3. Place
 
+Write the eval tasks first ([eval.md](eval.md)), while **before** is the only version, so they can't be shaped around the new one.
+
 Sort every piece onto a level. A reference most tasks read belongs in `SKILL.md`. Scripts, templates and assets are run or copied, never read.
+
+If only the user ever starts the skill, set `disable-model-invocation: true` (Codex: `policy.allow_implicit_invocation: false` in `agents/openai.yaml`) and give it a one-line description written for them. It then costs no context until it's started.
 
 ## 4. Cut and write
 
@@ -40,7 +44,7 @@ Write:
 - **Rules and facts**: a fresh reviewer confirms each rule in **before** still has a home or was cut under step 4, and checks each claim in **after** against the source.
 - `check <skill-dir>` passes.
 
-Ship when the slim skill matches or beats the old one. On a miss, the logs show what the agent lacked: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, and what moved where.
+Ship when `score` exits 0 and **after** either uses fewer tokens per run than **before** or fixes drift. If a MISS survives its rerun, or `score` reports WORSE, the logs show what the agent was missing: move that piece up a level before adding prose back. Report tokens per level before and after, the eval table, what moved where, and any tool change the slim skill depends on.
 
 ## After the diet
 
