@@ -17,7 +17,7 @@ Write `<out-dir>/result.json`:
 
 - `tokens`: the session's totals as the agent reports them. `input` excludes cached tokens. Don't add reasoning tokens to `output` unless the agent counts them separately; where the agent reports a total, check that the four numbers add up to it.
 - `turns`: the number of model requests (not user turns), or null when the agent doesn't report them.
-- `calls`: every tool call, with any path into the skill written under `<skill-dir>` as given. A skill loaded by name counts as reading `<skill-dir>/SKILL.md`, or `/<name>/SKILL.md` for any other skill.
+- `calls`: every tool call; add `path` when it reads a file and `command` when it runs a shell command. Write any path into the skill under `<skill-dir>` as given. A skill loaded by name counts as reading `<skill-dir>/SKILL.md`, or `/<name>/SKILL.md` for any other skill.
 
 Keep the agent's raw output in `<out-dir>`. Exit 0 once `result.json` has the usage, even if the agent itself failed; exit non-zero when the output has no usage, which stops the eval. Delete anything you create outside `<out-dir>`, also when you get SIGTERM. Several runs happen at once, so runs must not share anything.
 

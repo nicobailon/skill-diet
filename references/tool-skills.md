@@ -20,7 +20,7 @@ List names the tool rejects, parameters it accepts and ignores, public operation
 
 ### T3. Most-used calls
 
-Count real calls in session logs (see Logging calls) and group errors by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take what every task needs, and say so. For a native or MCP tool, also count how often agents open the skill (`calls <tool> --skill <name>`); they often call the tool without reading it.
+Count real calls in session logs (see Logging calls) and group errors by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take what every task needs, and say so. For a native or MCP tool, also count how often agents open the skill; they often call the tool without reading it.
 
 ### T4. Check the tool's help and errors
 
@@ -50,6 +50,5 @@ If you control the tool, fix each gap before the skill relies on it; otherwise t
 ## Logging calls
 
 - **CLI, in an eval**: `observe.mjs shim <tool>` installs a logging copy and prints how to run the eval with it; `observe.mjs --summary <log>` prints counts per version. Run `observe.mjs` alone for what each call kind means.
-- **CLI, past sessions**: `eval.mjs calls <tool> --cli`.
-- **Native or MCP tool**: `calls <tool> --by <key>`.
+- **Past sessions**: write a script that reads your agent's session logs from the last 60 days, and keep it with the adapter for the next diet. Count calls by subcommand or argument, errors by message, and the sessions that call the tool and read the skill. Forked and resumed sessions repeat earlier calls, so count each call id once; include calls made inside code-mode scripts, which some agents log inside the tool result.
 - **API or SDK**: count endpoint paths or function names in the code the agent wrote, from the session log.

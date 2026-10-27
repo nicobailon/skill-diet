@@ -4,31 +4,26 @@
 //         <dir>/sk/<version>/<skill>/   one skill folder per version; "none" needs no folder
 //         <dir>/adapter                 runs one session of your agent; references/adapter.md says how to write it
 // Run:    node eval.mjs run <dir> [--versions before,after,none] [--tasks a,b] [--runs 3] [--parallel 6] [--model <id>]
-//         calibrates the adapter, then runs every version, task and run. --model is passed to the adapter as
-//         EVAL_MODEL, and each run sets OBSERVE_TAGS="version=… task=… run=…" for observe.mjs.
+//         prints how many sessions it will start, calibrates the adapter, then runs every version, task and run.
+//         --model is passed to the adapter as EVAL_MODEL, and each run sets OBSERVE_TAGS="version=… task=… run=…"
+//         for observe.mjs.
 // Calibrate: node eval.mjs calibrate <dir> [--model <id>]   three short runs at once that the adapter must pass:
 //         the agent quotes a line only its copy of the skill holds, says it has no skill when given none, and
 //         runs a shell command.
-// Score:  node eval.mjs score <dir> [--detail]   also warns when a run read the skill from outside sk/<version>.
-// Calls:  node eval.mjs calls <tool> [--cli] [--days 60] [--by action] [--skill <name>] [--dir <sessions>]
-//         counts a native or MCP tool's calls in Pi, Claude Code, Codex CLI and Cursor CLI session logs:
-//         argument keys, values of the --by keys, top error messages, and with --skill how many sessions that
-//         call the tool read <name>/SKILL.md. With --cli, <tool> is a command-line tool: shell calls that run
-//         it are counted by subcommand (approximate: a command that only mentions the name counts too).
-//         Default dirs are ~/.pi/agent/sessions, ~/.claude/projects, ${CODEX_HOME:-~/.codex}/sessions and
-//         ~/.cursor/projects. Cursor logs no tool results, so its errors are not counted. Point --dir at an
-//         eval's runs/ to count wrong guesses, when the adapter keeps the agent's .jsonl output.
+// Score:  node eval.mjs score <dir> [--detail]   exits 1 on any MISS (before passed a task on every run, after on
+//         none) or WARN (a run read the skill from outside sk/<version>, a task fails in every version, or under
+//         half the runs given the skill read it).
 // Check:  node eval.mjs check <skill-dir>   prints SKILL.md's size and exits 1 on a relative link or #anchor that
 //         does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
-// must exit 0.
+// must exit 0. observe.mjs logs only the agent's calls, not those of `setup` and `check`.
 // Finished runs are kept, so rerunning `run` only fills in missing ones. A timeout counts as a failed run; any other
 // adapter failure stops the eval.
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const [command, target, ...flags] = process.argv.slice(2);
@@ -50,7 +45,6 @@ for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => process.exit(130));
 if (command === "run" && target) await run(resolve(target));
 else if (command === "calibrate" && target) await calibrate(resolve(target));
 else if (command === "score" && target) score(resolve(target));
-else if (command === "calls" && target) calls(target);
 else if (command === "check" && target) check(resolve(target));
 else {
   const lines = readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1);
@@ -212,18 +206,18 @@ async function calibrate(dir) {
 }
 
 async function run(dir) {
-  await calibrate(dir);
   const tasks = loadTasks(dir);
   const versions = opt("versions", "before,after,none").split(",");
   const runs = Number(opt("runs", "3"));
   const jobs = [];
-  for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r });
-  await pool(jobs, (job) => one(dir, job));
+  for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r, folder: join(dir, "runs", `${v}-${t.id}-${r}`) });
+  const todo = jobs.filter((job) => !existsSync(join(job.folder, "result.json")));
+  console.log(`${todo.length} sessions to run (${versions.length} versions × ${tasks.length} tasks × ${runs} runs, ${jobs.length - todo.length} done), after 3 to calibrate`);
+  await calibrate(dir);
+  await pool(todo, (job) => one(dir, job));
 }
 
-async function one(dir, { v, t, r }) {
-  const folder = join(dir, "runs", `${v}-${t.id}-${r}`);
-  if (existsSync(join(folder, "result.json"))) return;
+async function one(dir, { v, t, r, folder }) {
   // The adapter writes into agent/; result.json beside it marks the run finished, so a run cut off part-way starts over.
   const out = join(folder, "agent");
   rmSync(out, { recursive: true, force: true });
@@ -231,10 +225,12 @@ async function one(dir, { v, t, r }) {
   // The agent works outside the eval folder, where it could find other versions' skills and other runs' answers.
   const work = mkdtempSync(join(tmpdir(), "skill-diet-work-"));
   works.add(work);
-  if (t.setup && spawnSync("sh", ["-c", t.setup], { cwd: work, stdio: "inherit" }).status !== 0) throw new Error(`setup failed: ${t.id}`);
+  // setup and check are not the agent's calls, so observe.mjs must not log them.
+  const env = { ...process.env, OBSERVE_LOG: "" };
+  if (t.setup && spawnSync("sh", ["-c", t.setup], { cwd: work, env, stdio: "inherit" }).status !== 0) throw new Error(`setup failed: ${t.id}`);
   const start = Date.now();
   const exit = await session(dir, { skill: skillFolder(dir, v), prompt: t.prompt, out, work, tags: `version=${v} task=${t.id} run=${r}` });
-  const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work }).status === 0 : null;
+  const check = t.check ? spawnSync("sh", ["-c", t.check], { cwd: work, env }).status === 0 : null;
   rmSync(work, { recursive: true, force: true });
   works.delete(work);
   const wallMs = Date.now() - start;
@@ -248,6 +244,12 @@ function score(dir) {
   const tasks = Object.fromEntries(loadTasks(dir).map((t) => [t.id, t]));
   const rows = {};
   const skillDir = `/${basename(anySkill(dir))}/`;
+  // Every MISS and WARN makes score exit 1, so an agent working alone knows not to ship.
+  let flagged = 0;
+  const flag = (line) => {
+    flagged++;
+    console.log(line);
+  };
   for (const name of existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).sort() : []) {
     const out = join(dir, "runs", name);
     if (!existsSync(join(out, "result.json"))) continue;
@@ -268,7 +270,7 @@ function score(dir) {
     const texts = (res.calls ?? []).flatMap((c) => [c.path, c.command]).filter(Boolean).map(String);
     const reads = res.calls && [...new Set(texts.flatMap((s) => [...s.matchAll(/\/sk\/[^/]+\/[^/\s'"]+\/([^\s'"`;|&)]+)/g)].map((m) => m[1])))];
     const outside = texts.flatMap((s) => s.split(/[\s'"`;|&()]+/)).find((p) => p.includes(skillDir) && !p.includes(`/sk/${res.version}${skillDir}`));
-    if (outside) console.log(`WARN ${res.version}/${res.task}: read ${outside} from outside sk/${res.version}`);
+    if (outside) flag(`WARN ${res.version}/${res.task}: read ${outside} from outside sk/${res.version}`);
     const tokens = res.tokens && res.tokens.input + res.tokens.output + res.tokens.cacheRead + res.tokens.cacheWrite;
     const ok = res.exit === 0 && res.check !== false && !missing.length && !banned.length;
     (rows[res.version] ??= []).push({ ...res, ok, tokens, reads });
@@ -297,122 +299,22 @@ function score(dir) {
   }
   for (const id of Object.keys(tasks)) {
     const runs = versions.flatMap((v) => rows[v].filter((x) => x.task === id));
-    if (runs.length && !runs.some((x) => x.ok)) console.log(`WARN ${id} fails in every version: check the task, the setup, and whether any version read the skill`);
+    if (runs.length && !runs.some((x) => x.ok)) flag(`WARN ${id} fails in every version: check the task, the setup, and whether any version read the skill`);
+    const before = rows.before?.filter((x) => x.task === id) ?? [];
+    const after = rows.after?.filter((x) => x.task === id) ?? [];
+    // Two equally good versions split all-vs-none by chance in at most 1 task in 64 at 3 runs, so a MISS is rerun first.
+    if (before.length && after.length && before.every((x) => x.ok) && !after.some((x) => x.ok))
+      flag(`MISS ${id}: before passed every run, after none; rerun it with --tasks ${id} --runs 6, and if it holds, its logs show what after lacks`);
   }
-  const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]);
-  if (skilled.length && skilled.every((x) => !x.reads?.length)) console.log("WARN no run read the skill, so the scores measure the tool's own text; also run without the tool to see the skill once read");
+  const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]).filter((x) => x.reads);
+  const read = skilled.filter((x) => x.reads.length).length;
+  if (read < skilled.length / 2) flag(`WARN only ${read} of ${skilled.length} runs given the skill read it, so the scores mostly measure the tool's own text; also run without the tool to see the skill once read`);
   for (const v of versions.filter((v) => v !== "none")) {
     const counts = {};
     for (const x of rows[v]) for (const p of x.reads ?? []) counts[p] = (counts[p] ?? 0) + 1;
     console.log(`${v} reads:`, JSON.stringify(counts));
   }
-}
-
-function calls(tool) {
-  const since = Date.now() - Number(opt("days", "60")) * 86_400_000;
-  const by = opt("by", "action").split(",");
-  const cli = flags.includes("--cli");
-  const escaped = tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const subcommands = (args) => [...String(args.command ?? "").matchAll(new RegExp(`(?:^|[^\\w-])${escaped} ([a-z][a-z0-9.-]*)`, "g"))].map((m) => m[1]);
-  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
-  const dirs = opt("dir")
-    ? [resolve(opt("dir"))]
-    : [join(homedir(), ".pi", "agent", "sessions"), join(homedir(), ".claude", "projects"), join(codexHome, "sessions"), join(homedir(), ".cursor", "projects")];
-  const matches = (name, args) =>
-    typeof name === "string" && (cli ? subcommands(args).length > 0 : name === tool || name.endsWith(`__${tool}`));
-  const seen = new Map(); // call id -> { args, error }; forked sessions repeat entries, so ids dedupe them
-  const skill = opt("skill");
-  const skillPath = skill && `/${skill}/SKILL.md`;
-  const isRead = (name) => typeof name === "string" && /(^|__)read$/i.test(name);
-  const readsSkill = (name, args) =>
-    (isRead(name) && String(args.path ?? args.file_path ?? "").endsWith(skillPath)) ||
-    (name === "Skill" && String(args.skill ?? "").split(":").pop() === skill) || // Claude Code loads a skill through its Skill tool
-    String(args.command ?? "").includes(skillPath);
-  // Codex shell calls come in several shapes; each becomes { command: "<shell text>" } so --cli and --skill see them.
-  const codexCall = (p) => {
-    if (p.type === "custom_tool_call") {
-      if (p.name !== "exec") return { input: p.input };
-      const cmds = [...String(p.input).matchAll(/\bcmd"?\s*:\s*"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
-      return { command: cmds.join("\n") };
-    }
-    let args;
-    try {
-      args = JSON.parse(p.arguments);
-    } catch {
-      return {};
-    }
-    if (!args || typeof args !== "object") return {};
-    if (Array.isArray(args.command)) return { ...args, command: args.command.at(-1) };
-    return args.cmd !== undefined && args.command === undefined ? { ...args, command: args.cmd } : args;
-  };
-  // A Pi fork repeats its parent's entries, so sessions are counted by their root file.
-  const using = new Set(), reading = new Set();
-  const files = [];
-  const walk = (d) => {
-    for (const n of existsSync(d) ? readdirSync(d) : []) {
-      const p = join(d, n);
-      if (!existsSync(p)) continue; // live sessions can delete temp files mid-scan
-      const s = statSync(p);
-      if (s.isDirectory()) walk(p);
-      else if (n.endsWith(".jsonl") && s.mtimeMs >= since) files.push(p);
-    }
-  };
-  dirs.forEach(walk);
-  for (const file of files) {
-    if (!existsSync(file)) continue;
-    // Cursor keeps a session's subagents in <session>/subagents/; count them with their session.
-    const root = file.match(/^(.*\/agent-transcripts\/[^/]+)\//)?.[1] ?? file.replace(/\.jsonl$/, "").split("/forks/")[0];
-    const lines = readFileSync(file, "utf8").split("\n");
-    for (const [n, line] of lines.entries()) {
-      // A skill name alone, not its path, also keeps Claude Code's Skill tool calls ({"skill":"<name>"}).
-      if (!line.includes(tool) && !line.includes('"tool_result"') && !line.includes('_call_output"') && !(skill && line.includes(skill))) continue;
-      let entry;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const found = []; // [id, name, args]
-      // Codex: response_item payloads; a call and its output share call_id.
-      const p = entry.type === "response_item" ? entry.payload : undefined;
-      if (p?.type === "function_call" || p?.type === "custom_tool_call") found.push([p.call_id, p.name, codexCall(p)]);
-      if ((p?.type === "custom_tool_call_output" || p?.type === "function_call_output") && seen.has(p.call_id)) {
-        // Only Codex's code-mode exec reports failure in a parseable way ("Script failed").
-        const failed = Array.isArray(p.output) && String(p.output[0]?.text ?? "").startsWith("Script failed");
-        seen.get(p.call_id).error = failed ? p.output : null;
-      }
-      // Pi: assistant toolCall + toolResult message. Claude Code: tool_use + user tool_result. Cursor: tool_use without ids or results.
-      const m = entry.message;
-      if (m?.role === "toolResult" && seen.has(m.toolCallId)) seen.get(m.toolCallId).error = m.isError ? m.content : null;
-      for (const [i, c] of (Array.isArray(m?.content) ? m.content : []).entries()) {
-        const args = c.type === "toolCall" ? c.arguments : c.type === "tool_use" ? c.input : undefined;
-        if (args) found.push([c.id ?? `${file}:${n}:${i}`, c.name, args]);
-        if (c.type === "tool_result" && seen.has(c.tool_use_id)) seen.get(c.tool_use_id).error = c.is_error ? c.content : null;
-      }
-      for (const [id, name, args] of found) {
-        if (matches(name, args)) using.add(root), seen.set(id, { args, error: null });
-        if (skillPath && readsSkill(name, args)) reading.add(root);
-      }
-    }
-  }
-  const count = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
-  const keys = new Map(), values = new Map(), errors = new Map();
-  for (const { args, error } of seen.values()) {
-    if (cli) for (const sub of subcommands(args)) count(keys, sub);
-    else for (const k of Object.keys(args)) count(keys, k);
-    if (!cli) for (const k of by) if (args[k] !== undefined) count(values, `${k}=${JSON.stringify(args[k])}`);
-    if (error) {
-      const text = typeof error === "string" ? error : error.map((p) => p.text ?? "").join(" ");
-      // Drop quoted values and a trailing id ("...not found: pr42-gate") so one message groups across sessions.
-      count(errors, text.split("\n")[0].replace(/'[^']*'|"[^"]*"/g, "'…'").replace(/:\s*\S+$/, ": …").slice(0, 120));
-    }
-  }
-  const top = (map, n) => [...map].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${String(v).padStart(6)}  ${k}`).join("\n");
-  const errorCount = [...errors.values()].reduce((a, b) => a + b, 0);
-  console.log(`${seen.size} ${tool} calls in ${files.length} session files, ${errorCount} errors\n\n${cli ? "subcommands" : "argument keys"}:\n${top(keys, 30)}`);
-  if (values.size) console.log(`\n${by.join(", ")} values:\n${top(values, 20)}`);
-  if (errors.size) console.log(`\ntop errors:\n${top(errors, 15)}`);
-  if (skill) console.log(`\n${skill}/SKILL.md read in ${[...using].filter((r) => reading.has(r)).length} of ${using.size} sessions that call ${tool}`);
+  if (flagged) process.exitCode = 1;
 }
 
 function check(root) {
