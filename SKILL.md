@@ -1,5 +1,7 @@
 ---
 name: skill-diet
+version: 0.1.0
+author: Nico Bailon
 description: Keep agent skills lean and correct. Use before editing an existing skill, such as adding a lesson; when a code change touches names or behavior a skill describes; and to put a skill on a full diet when it is large, loads detail most tasks never use, or has drifted from the tool it teaches.
 ---
 
