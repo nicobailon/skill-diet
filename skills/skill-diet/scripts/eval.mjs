@@ -14,7 +14,8 @@
 //         versions given (default before and after) and prints after's pass rate minus before's, ± 2 standard
 //         errors. Exits 1 on any MISS (before passed a task on every run, after on none), WORSE (after's pass rate
 //         is lower by more than chance explains) or WARN (a run read the skill from outside sk/<version>, a task
-//         fails in every version or has runs but left tasks.json, or under half the runs given the skill read it).
+//         fails in every version or has runs but left tasks.json, under half the runs given the skill read it, or a
+//         compared version has no runs).
 // Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and exits 1 on a relative link or
 //         #anchor that does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere

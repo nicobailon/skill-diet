@@ -20,7 +20,7 @@ This runs skill-diet's eval: tasks and scoring per [eval.md](../skill-diet/refer
 
 ## 1. Measure the gap
 
-`base` and `none` on every model, tuning tasks, 3 runs. Score each model with `score <dir> --model <m> --versions base,none`. A task the target passes as often as the reference has no gap; leave it. If the target does better with `none`, look for lines to cut first. No gap on any target → stop and report.
+`base` and `none` on every model, tuning tasks, 3 runs. Score each model with `score <dir> --model <m> --versions none,base`. A task the target passes as often as the reference has no gap; leave it. If the target does better with `none` (MISS or WORSE here), look for lines to cut first. No gap on any target → stop and report.
 
 ## 2. Find the cause
 
@@ -38,11 +38,11 @@ Otherwise a fresh reviewer reads each failing target run beside a passing refere
 
 Try a shared fix first: plainer, positive, more direct wording helps every model. Each candidate is a version `L<n>`: `base` plus one change.
 
-1. **Helps the target:** `base` vs `L<n>` on the target, the tasks it's for, 6 runs. Keep it if the gain `score --versions base,L<n> --tasks <those tasks>` prints is larger than its 2 SE, or a task flips from failing every run to passing every run.
+1. **Helps the target:** `base` vs `L<n>` on the target, the tasks it's for, 6 runs. Keep it if the gain `score <dir> --model <target> --versions base,L<n> --tasks <those tasks>` prints is larger than its 2 SE, or a task flips from failing every run to passing every run.
 2. **Hurts no one:** all kept changes as `tuned`, vs `base` on every other model, all tuning tasks, 3 runs. On WORSE or MISS, leave one change out at a time to find it, then drop or reword it.
 3. **Still helps together:** `tuned` vs `base` on the target, all tuning tasks.
 
-Every model reads every line; a host can't reliably hide a line by model. A change that hurts another model doesn't ship.
+Every model reads every line; a host can't reliably hide a line by model.
 
 ## 4. Held-back, once
 
