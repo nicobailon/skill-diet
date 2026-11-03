@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- **Fix a skill that works worse on another model.** A second skill, model-gap, runs the same tasks on each model, finds why the weaker one fails, and keeps a fix only if it helps that model without hurting the others, judged on tasks held back until the end. Only you start it, with `/skill:model-gap <skill> <models>`, so it costs no context otherwise. In its first trial, one description change took Kimi from 78% to 98% of tasks and Haiku from 85% to 100%, with no drop on GPT or GLM.
+- **Evals across models.** Runs for each `--model` are kept apart in one eval folder, calibration fails when the host serves a different model than asked, and `score --versions a,b` compares any two versions and prints the gain with its margin of error.
+- **Calibration no longer fails** when a model given no skill tries to open an installed copy that the adapter blocks.
+- **Skills that agents rarely open** get a description that says to read them before the first call of their tool.
+- **New layout:** both skills now live under `skills/`. If you cloned the repo into a skills folder by hand, link `skills/skill-diet` and `skills/model-gap` instead.
+
 ## [0.1.0] - 2026-10-27
 
 First versioned release.

@@ -36,3 +36,4 @@ Stop at the first step that handles the change.
 ## Look up the rest
 
 - Full diet of a large, bloated or drifted skill → [references/diet.md](references/diet.md)
+- A skill works worse on one model than another → [model-gap](../model-gap/SKILL.md)

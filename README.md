@@ -73,6 +73,20 @@ Before an agent adds to a skill, it stops at the first step that handles the cha
 
 When code changes a name or behavior a skill describes, the skill is updated in the same change. Each commit to a skill records its size before and after, and once a skill grows about 10% past its last diet, it is due for another.
 
+## When a skill works worse on another model
+
+A skill written and tested with one model often does worse with another. The second skill in this repo, model-gap, runs the same tasks on each model, finds why the weaker one fails (it never opened the skill, misread a rule, hit a tool error, or the test itself was wrong), and tests one fix at a time. It keeps a fix only if it helps that model without hurting the others, judged on tasks no fix was tuned on. Only you start it, with `/skill:model-gap <skill> <models>`, so it costs no context otherwise.
+
+In the first trial, on a skill for messaging between agent sessions, Kimi and Haiku rarely opened the skill. One change to its description fixed that:
+
+| Model | Tasks passed before | After |
+| --- | --- | --- |
+| Kimi K2.7 Code | 78% | 98% |
+| Claude Haiku 5.5 | 85% | 100% |
+| GPT-6 Luna, GLM-5.3 | 100% | 100% |
+
+The whole trial, 924 sessions on four models, cost $2.68.
+
 ## Install
 
 Pi:
@@ -94,12 +108,12 @@ Update with `claude plugin update skill-diet@skill-diet`.
 Codex, Cursor and other agents:
 
 ```bash
-npx skills add nicobailon/skill-diet -g
+npx skills add nicobailon/skill-diet -g --skill '*'
 ```
 
-This keeps one copy in `~/.agents/skills`, linked into each agent you pick. Update with `npx skills update`. Use one route per agent; installing both loads the skill twice.
+This keeps one copy of each skill in `~/.agents/skills`, linked into each agent you pick. Update with `npx skills update`. Use one route per agent; installing both loads the skills twice. model-gap runs skill-diet's scripts, so install the two together.
 
-To install by hand, clone the repo into `~/.agents/skills/skill-diet`, where Codex, Cursor and Pi read it, and link it into `~/.claude/skills/skill-diet` for Claude Code.
+To install by hand, clone the repo, then link `skills/skill-diet` and `skills/model-gap` into `~/.agents/skills/`, where Codex, Cursor and Pi read them, and into `~/.claude/skills/` for Claude Code.
 
 Releases and what changed in each are in [CHANGELOG.md](CHANGELOG.md).
 
@@ -107,18 +121,22 @@ Releases and what changed in each are in [CHANGELOG.md](CHANGELOG.md).
 
 ```
 skill-diet/
-├── SKILL.md              the levels and the rules for every update
-├── package.json          the version, and what lets `pi install` load the skill
-├── .claude-plugin/       the Claude Code plugin and its marketplace
-├── references/           read only when needed
-│   ├── diet.md           the five steps of a diet
-│   ├── tool-skills.md    extra steps for skills that teach a tool
-│   ├── formats.md        how to write commands compactly
-│   ├── eval.md           the before/after test
-│   └── adapter.md        how your agent writes the script that runs it in the test
-└── scripts/
-    ├── observe.mjs       wraps a CLI so every call an agent makes during the test is logged
-    └── eval.mjs          checks your agent's adapter, then runs and scores the before/after test; checks a skill's links and prints its size
+├── package.json              the version, and what lets `pi install` load the skills
+├── .claude-plugin/           the Claude Code plugin and its marketplace
+└── skills/
+    ├── skill-diet/
+    │   ├── SKILL.md          the levels and the rules for every update
+    │   ├── references/       read only when needed
+    │   │   ├── diet.md       the five steps of a diet
+    │   │   ├── tool-skills.md  extra steps for skills that teach a tool
+    │   │   ├── formats.md    how to write commands compactly
+    │   │   ├── eval.md       the before/after test
+    │   │   └── adapter.md    how your agent writes the script that runs it in the test
+    │   └── scripts/
+    │       ├── observe.mjs   wraps a CLI so every call an agent makes during the test is logged
+    │       └── eval.mjs      checks your agent's adapter, then runs and scores the test, per model; checks a skill's links and prints its size
+    └── model-gap/
+        └── SKILL.md          finding and fixing why a skill works worse on one model
 ```
 
 ### Why scripts, plus an adapter your agent writes
@@ -139,7 +157,7 @@ The test is only fair if each run sees just its own copy of the skill and every 
 
 - The before/after test runs real agent sessions, so it costs time and tokens. Run it before you ship a slimmer version, not after every update.
 - The checks cover the eval tasks and everything the old skill said. To make sure your own use is one of them, run the diet right after using the skill, or name the case when you ask.
-- Calibration checks that the agent is given only its copy of the skill and that tokens and tool calls are recorded. An agent with a shell can still find another copy on disk; the scorer warns when a run reads one. Calibration also can't check that token counts are exact; [adapter.md](references/adapter.md) says how to count them.
+- Calibration checks that the agent is given only its copy of the skill and that tokens and tool calls are recorded. An agent with a shell can still find another copy on disk; the scorer warns when a run reads one. Calibration also can't check that token counts are exact; [adapter.md](skills/skill-diet/references/adapter.md) says how to count them.
 - The call logger wraps command-line tools. For native tools, MCP servers, APIs and SDKs, calls are read from the session logs instead.
 
 ## Credits

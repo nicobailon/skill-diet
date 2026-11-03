@@ -5,17 +5,18 @@
 //         <dir>/adapter                 runs one session of your agent; references/adapter.md says how to write it
 // Run:    node eval.mjs run <dir> [--versions before,after,none] [--tasks a,b] [--runs 3] [--parallel 6] [--model <id>]
 //         prints how many sessions it will start, calibrates the adapter, then runs every version, task and run.
-//         --model is passed to the adapter as EVAL_MODEL, and each run sets OBSERVE_TAGS="version=… task=… run=…"
-//         for observe.mjs.
+//         --model is passed to the adapter as EVAL_MODEL and keeps that model's runs in runs/<model>/, so one folder
+//         holds several models. Each run sets OBSERVE_TAGS="version=… task=… run=…" for observe.mjs.
 // Calibrate: node eval.mjs calibrate <dir> [--model <id>]   three short runs at once that the adapter must pass:
 //         the agent quotes a line only its copy of the skill holds, says it has no skill when given none, and
-//         runs a shell command.
-// Score:  node eval.mjs score <dir> [--detail]   exits 1 on any MISS (before passed a task on every run, after on
-//         none), WORSE (after's pass rate is lower by more than chance explains) or WARN (a run read the skill from
-//         outside sk/<version>, a task fails in every version or has runs but left tasks.json, or under half the
-//         runs given the skill read it).
-// Check:  node eval.mjs check <skill-dir>   prints SKILL.md's size and exits 1 on a relative link or #anchor that
-//         does not resolve.
+//         runs a shell command. With --model, each run must report that model.
+// Score:  node eval.mjs score <dir> [--model <id>] [--versions before,after] [--detail]   compares the first two
+//         versions given (default before and after) and prints after's pass rate minus before's, ± 2 standard
+//         errors. Exits 1 on any MISS (before passed a task on every run, after on none), WORSE (after's pass rate
+//         is lower by more than chance explains) or WARN (a run read the skill from outside sk/<version>, a task
+//         fails in every version or has runs but left tasks.json, or under half the runs given the skill read it).
+// Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and exits 1 on a relative link or
+//         #anchor that does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
@@ -29,6 +30,8 @@ import { basename, dirname, join, resolve } from "node:path";
 
 const [command, target, ...flags] = process.argv.slice(2);
 const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.indexOf(`--${name}`) + 1] : fallback);
+// Runs for --model live in runs/<model>/, with the id made safe for a folder name.
+const runsDir = (dir) => join(dir, "runs", ...(opt("model") ? [opt("model").replace(/[^\w.-]+/g, "_")] : []));
 
 // On a crash or Ctrl-C, stop the adapters still running and remove their work dirs. SIGTERM lets an adapter delete what
 // it made outside its out-dir, such as a copied login; adapters are detached, so they outlive this process to do it.
@@ -135,7 +138,7 @@ function readResult(out, exit) {
     Array.isArray(r.calls) &&
     r.calls.every((c) => typeof c?.name === "string");
   if (!ok) throw new Error(`${file} needs answer, non-zero tokens { input, output, cacheRead, cacheWrite }, turns and calls [{ name, path?, command? }]`);
-  return { answer: r.answer, tokens: r.tokens, turns: r.turns ?? null, calls: r.calls };
+  return { answer: r.answer, tokens: r.tokens, turns: r.turns ?? null, calls: r.calls, model: r.model ?? null };
 }
 
 async function calibrate(dir) {
@@ -165,10 +168,8 @@ async function calibrate(dir) {
     {
       id: "none",
       prompt: `If you have a skill named ${name}, reply with only the first line of its body. Otherwise reply exactly NO-SKILL.`,
-      checks: (answer, texts) => [
-        [answer.includes("NO-SKILL"), "given no skill, the agent has none (a quoted line means an installed copy is visible)"],
-        [!texts.some((s) => s.includes(`/${name}/SKILL.md`)), `calls read no ${name}/SKILL.md`],
-      ],
+      // Only the answer counts: some models try to open an installed copy even when blocked, then reply NO-SKILL.
+      checks: (answer) => [[answer.includes("NO-SKILL"), "given no skill, the agent has none (a quoted line means an installed copy is visible)"]],
     },
     {
       id: "shell",
@@ -195,7 +196,10 @@ async function calibrate(dir) {
       return [[false, e.message]];
     }
     const texts = r.calls.flatMap((x) => [x.path, x.command]).filter(Boolean).map(String);
-    return c.checks(r.answer, texts);
+    // Hosts can swap in another model without failing (an unknown id, a fallback model), so the served one is checked.
+    const want = opt("model");
+    const model = want ? [[String(r.model ?? "").includes(want.split("/").pop()), `the run reports model ${want} (got ${r.model ?? "none"})`]] : [];
+    return [...c.checks(r.answer, texts), ...model];
   });
   const results = lines.flatMap((l, i) => l.map(([ok, what]) => [ok, `${cases[i].id}: ${what}`]));
   for (const [ok, what] of results) console.log(`${ok ? "PASS" : "FAIL"} ${what}`);
@@ -211,7 +215,7 @@ async function run(dir) {
   const versions = opt("versions", "before,after,none").split(",");
   const runs = Number(opt("runs", "3"));
   const jobs = [];
-  for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r, folder: join(dir, "runs", `${v}-${t.id}-${r}`) });
+  for (let r = 0; r < runs; r++) for (const t of tasks) for (const v of versions) jobs.push({ v, t, r, folder: join(runsDir(dir), `${v}-${t.id}-${r}`) });
   const todo = jobs.filter((job) => !existsSync(join(job.folder, "result.json")));
   console.log(`${todo.length} sessions to run (${versions.length} versions × ${tasks.length} tasks × ${runs} runs; ${jobs.length - todo.length} already done)`);
   if (!todo.length) return;
@@ -238,7 +242,7 @@ async function one(dir, { v, t, r, folder }) {
   const wallMs = Date.now() - start;
   // A timeout counts as a failed run. Any other adapter failure stops the eval, and rerunning retries the run.
   const result = exit === "timeout" ? { answer: "", tokens: null, turns: null, calls: null } : readResult(out, exit);
-  writeFileSync(join(folder, "result.json"), JSON.stringify({ version: v, task: t.id, run: r, exit, check, wallMs, ...result }));
+  writeFileSync(join(folder, "result.json"), JSON.stringify({ version: v, task: t.id, run: r, exit, check, wallMs, ...result, model: result.model ?? opt("model") ?? null }));
   console.log(v, t.id, r, exit, `${Math.round(wallMs / 1000)}s`);
 }
 
@@ -246,14 +250,15 @@ function score(dir) {
   const tasks = Object.fromEntries(loadTasks(dir).map((t) => [t.id, t]));
   const rows = {};
   const skillDir = `/${basename(anySkill(dir))}/`;
+  const [B, A] = opt("versions", "before,after").split(",");
   // Every MISS and WARN makes score exit 1, so an agent working alone knows not to ship.
   let flagged = 0;
   const flag = (line) => {
     flagged++;
     console.log(line);
   };
-  for (const name of existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).sort() : []) {
-    const out = join(dir, "runs", name);
+  for (const name of existsSync(runsDir(dir)) ? readdirSync(runsDir(dir)).sort() : []) {
+    const out = join(runsDir(dir), name);
     if (!existsSync(join(out, "result.json"))) continue;
     const res = JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
     const t = tasks[res.task];
@@ -281,7 +286,8 @@ function score(dir) {
     (rows[res.version] ??= []).push({ ...res, ok, tokens, reads });
     if (flags.includes("--detail") && !ok) console.log(`FAIL ${name}  missing=${JSON.stringify(missing)} banned=${JSON.stringify(banned)} exit=${res.exit} check=${res.check}`);
   }
-  const versions = Object.keys(rows).sort((a, b) => ["before", "after", "none"].indexOf(a) - ["before", "after", "none"].indexOf(b));
+  const rank = (v) => ([B, A, "none"].includes(v) ? [B, A, "none"].indexOf(v) : 3);
+  const versions = Object.keys(rows).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   // Timed-out runs, and agents that don't report turns, are left out of a column instead of counting as 0.
   const avg = (r, f, digits) => {
     const xs = r.map(f).filter((x) => x != null);
@@ -305,18 +311,20 @@ function score(dir) {
   for (const id of Object.keys(tasks)) {
     const runs = versions.flatMap((v) => rows[v].filter((x) => x.task === id));
     if (runs.length && !runs.some((x) => x.ok)) flag(`WARN ${id} fails in every version, so it can't tell them apart. Fix it and rerun it in every version, or remove it and its runs.`);
-    const before = rows.before?.filter((x) => x.task === id) ?? [];
-    const after = rows.after?.filter((x) => x.task === id) ?? [];
+    const before = rows[B]?.filter((x) => x.task === id) ?? [];
+    const after = rows[A]?.filter((x) => x.task === id) ?? [];
     // Two equally good versions split all-vs-none by chance in at most 1 task in 64 at 3 runs, so a MISS is rerun first.
     if (before.length && after.length && before.every((x) => x.ok) && !after.some((x) => x.ok))
-      flag(`MISS ${id}: before passed every run and after passed none. Rerun with --tasks ${id} --versions before,after --runs 6; if it still fails, its logs show what after is missing.`);
+      flag(`MISS ${id}: ${B} passed every run and ${A} passed none. Rerun with --tasks ${id} --versions ${B},${A} --runs 6; if it still fails, its logs show what ${A} is missing.`);
   }
-  // A drop within two standard errors is noise at these run counts; a bigger one is a worse skill.
-  if (rows.before && rows.after) {
+  // A change within two standard errors is noise at these run counts; a bigger drop is a worse skill.
+  if (rows[B] && rows[A]) {
     const rate = (r) => r.filter((x) => x.ok).length / r.length;
-    const [b, a] = [rate(rows.before), rate(rows.after)];
-    const se = Math.sqrt((b * (1 - b)) / rows.before.length + (a * (1 - a)) / rows.after.length);
-    if (b - a > 2 * se) flag(`WORSE after passed ${Math.round(a * 100)}% of runs and before ${Math.round(b * 100)}%, a bigger gap than chance explains. after's failing outputs show what it's missing.`);
+    const [b, a] = [rate(rows[B]), rate(rows[A])];
+    const se = Math.sqrt((b * (1 - b)) / rows[B].length + (a * (1 - a)) / rows[A].length);
+    const pts = Math.round((a - b) * 100);
+    console.log(`\n${A} − ${B}: ${pts > 0 ? "+" : ""}${pts} points ± ${Math.round(200 * se)} (2 SE)`);
+    if (b - a > 2 * se) flag(`WORSE ${A} passed ${Math.round(a * 100)}% of runs and ${B} ${Math.round(b * 100)}%, a bigger gap than chance explains. ${A}'s failing outputs show what it's missing.`);
   }
   const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]).filter((x) => x.reads);
   const read = skilled.filter((x) => x.reads.length).length;
@@ -330,7 +338,6 @@ function score(dir) {
 }
 
 function check(root) {
-  console.log(`SKILL.md ${statSync(join(root, "SKILL.md")).size} bytes`);
   const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/\s/g, "-");
   const cache = {};
   const anchors = (file) =>
@@ -345,6 +352,9 @@ function check(root) {
     }
   };
   walk(root);
+  const skills = files.filter((f) => basename(f) === "SKILL.md");
+  if (!skills.length) throw new Error(`${root} holds no SKILL.md`);
+  for (const f of skills) console.log(`${f.slice(root.length + 1)} ${statSync(f).size} bytes`);
   let broken = 0;
   for (const file of files) {
     const text = readFileSync(file, "utf8").replace(/```[\s\S]*?```/g, "");
