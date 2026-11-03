@@ -17,3 +17,15 @@ Write `<dir>/adapter` for the agent you test with, as [adapter.md](adapter.md) s
 For quality results (a page, a diagram, prose), score with the skill's own checker and have a fresh session judge each before/after pair blind, in random order.
 
 Run each task 3 times per version, same model, fresh session each time.
+
+## Tested with
+
+When an eval decides a ship, record in the skill's front matter every host and model it passed on, replacing the old values. Pass rates go in the commit message.
+
+```yaml
+metadata:
+  tested-with: "pi opencode-go/gpt-6-luna; pi opencode-go/kimi-k2.7-code:high"   # <host> <provider/model>[:<effort>], joined by "; "
+  tested-on: "2026-11-01"
+```
+
+Not `model:` or `effort:`: Claude Code switches to those when the skill runs.

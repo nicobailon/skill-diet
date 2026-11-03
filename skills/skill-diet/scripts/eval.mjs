@@ -16,8 +16,8 @@
 //         is lower by more than chance explains) or WARN (a run read the skill from outside sk/<version>, a task
 //         fails in every version or has runs but left tasks.json, under half the runs given the skill read it, or a
 //         compared version has no runs).
-// Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and exits 1 on a relative link or
-//         #anchor that does not resolve.
+// Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and what it was tested with, and
+//         exits 1 on a relative link or #anchor that does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
 // in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
 // "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
@@ -357,7 +357,12 @@ function check(root) {
   walk(root);
   const skills = files.filter((f) => basename(f) === "SKILL.md");
   if (!skills.length) throw new Error(`${root} holds no SKILL.md`);
-  for (const f of skills) console.log(`${f.slice(root.length + 1)} ${statSync(f).size} bytes`);
+  for (const f of skills) {
+    const front = readFileSync(f, "utf8").match(/^---\n[\s\S]*?\n---\n/)?.[0] ?? "";
+    const field = (k) => front.match(new RegExp(`^\\s+${k}:\\s*"?([^"\\n]*)`, "m"))?.[1];
+    const tested = field("tested-with") ? `, tested with ${field("tested-with")} on ${field("tested-on")}` : "";
+    console.log(`${f.slice(root.length + 1)} ${statSync(f).size} bytes${tested}`);
+  }
   let broken = 0;
   for (const file of files) {
     const text = readFileSync(file, "utf8").replace(/```[\s\S]*?```/g, "");

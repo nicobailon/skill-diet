@@ -52,4 +52,4 @@ Every model reads every line; a host can't reliably hide a line by model.
 
 ## Afterward
 
-Note in the eval folder which changes came from which target, with the exact model id. When that model is replaced, rerun `base` with and without them on the new one, and delete what no longer helps. Measurements go in the commit message.
+On ship, record every model as eval.md's [Tested with](../skill-diet/references/eval.md#tested-with) says. The commit message names which change came from which target, with the measurements. When a target in `tested-with` is replaced, rerun `base` with and without its changes on the new model, and delete what no longer helps.
