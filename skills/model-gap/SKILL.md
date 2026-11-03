@@ -1,6 +1,6 @@
 ---
 name: model-gap
-description: Find why a skill works worse on one model than another, and fix it without hurting the others. Start with /skill:model-gap <skill> <models>.
+description: Find why a skill works worse on one model than another, and fix it without hurting the others. Give it the skill and the models to compare.
 disable-model-invocation: true
 ---
 
@@ -38,7 +38,7 @@ Otherwise a fresh reviewer reads each failing target run beside a passing refere
 
 Try a shared fix first: plainer, positive, more direct wording helps every model. Each candidate is a version `L<n>`: `base` plus one change.
 
-1. **Helps the target:** `base` vs `L<n>` on the target, the tasks it's for, 6 runs. Keep it if the gain `score --versions base,L<n>` prints is larger than its 2 SE, or a task flips from failing every run to passing every run.
+1. **Helps the target:** `base` vs `L<n>` on the target, the tasks it's for, 6 runs. Keep it if the gain `score --versions base,L<n> --tasks <those tasks>` prints is larger than its 2 SE, or a task flips from failing every run to passing every run.
 2. **Hurts no one:** all kept changes as `tuned`, vs `base` on every other model, all tuning tasks, 3 runs. On WORSE or MISS, leave one change out at a time to find it, then drop or reword it.
 3. **Still helps together:** `tuned` vs `base` on the target, all tuning tasks.
 

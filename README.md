@@ -75,11 +75,11 @@ When code changes a name or behavior a skill describes, the skill is updated in 
 
 ## When a skill works worse on another model
 
-A skill written and tested with one model often does worse with another. The second skill in this repo, model-gap, runs the same tasks on each model, finds why the weaker one fails (it never opened the skill, misread a rule, hit a tool error, or the test itself was wrong), and tests one fix at a time. It keeps a fix only if it helps that model without hurting the others, judged on tasks no fix was tuned on. Only you start it, with `/skill:model-gap <skill> <models>`, so it costs no context otherwise.
+A skill written and tested with one model often does worse with another. The second skill in this repo, model-gap, runs the same tasks on each model, finds why the weaker one fails (it never opened the skill, misread a rule, hit a tool error, or the test itself was wrong), and tests one fix at a time. It keeps a fix only if it helps that model without hurting the others, judged on tasks no fix was tuned on. Only you start it (`/skill:model-gap <skill> <models>` in Pi, `/skill-diet:model-gap` in Claude Code), so it costs no context otherwise.
 
 In the first trial, on a skill for messaging between agent sessions, Kimi and Haiku rarely opened the skill. One change to its description fixed that:
 
-| Model | Tasks passed before | After |
+| Model | Runs passed before | After |
 | --- | --- | --- |
 | Kimi K2.7 Code | 78% | 98% |
 | Claude Haiku 5.5 | 85% | 100% |

@@ -30,8 +30,10 @@ import { basename, dirname, join, resolve } from "node:path";
 
 const [command, target, ...flags] = process.argv.slice(2);
 const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.indexOf(`--${name}`) + 1] : fallback);
-// Runs for --model live in runs/<model>/, with the id made safe for a folder name.
-const runsDir = (dir) => join(dir, "runs", ...(opt("model") ? [opt("model").replace(/[^\w.-]+/g, "_")] : []));
+// Runs and calibration for --model live in runs/<model>/ and calibration/<model>/, with the id made safe for a folder
+// name, so models can run at once in one folder.
+const perModel = (dir, kind) => join(dir, kind, ...(opt("model") ? [opt("model").replace(/[^\w.-]+/g, "_")] : []));
+const runsDir = (dir) => perModel(dir, "runs");
 
 // On a crash or Ctrl-C, stop the adapters still running and remove their work dirs. SIGTERM lets an adapter delete what
 // it made outside its out-dir, such as a copied login; adapters are detached, so they outlive this process to do it.
@@ -149,7 +151,7 @@ async function calibrate(dir) {
   // A fresh line under the real skill's name and description: only the copy given to the adapter holds it, and an
   // installed copy of the skill shows up in the run that gets none.
   const canary = `CANARY-${Math.random().toString(36).slice(2, 10)}`;
-  const base = join(dir, "calibration");
+  const base = perModel(dir, "calibration");
   rmSync(base, { recursive: true, force: true });
   const skill = join(base, "copy", name);
   mkdirSync(skill, { recursive: true });
@@ -263,7 +265,7 @@ function score(dir) {
     const res = JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
     const t = tasks[res.task];
     if (!t) {
-      if (!opt("tasks")) flag(`WARN runs/${name}: task ${res.task} isn't in tasks.json. Only a task every version fails can be removed, and its runs go with it.`);
+      if (!opt("tasks")) flag(`WARN ${out.slice(dir.length + 1)}: task ${res.task} isn't in tasks.json. Only a task every version fails can be removed, and its runs go with it.`);
       continue;
     }
     const unquote = (s) => s.replace(/["']/g, "");
@@ -325,7 +327,7 @@ function score(dir) {
     const pts = Math.round((a - b) * 100);
     console.log(`\n${A} − ${B}: ${pts > 0 ? "+" : ""}${pts} points ± ${Math.round(200 * se)} (2 SE)`);
     if (b - a > 2 * se) flag(`WORSE ${A} passed ${Math.round(a * 100)}% of runs and ${B} ${Math.round(b * 100)}%, a bigger gap than chance explains. ${A}'s failing outputs show what it's missing.`);
-  }
+  } else for (const v of [B, A].filter((v) => !rows[v])) flag(`WARN ${runsDir(dir).slice(dir.length + 1)} has no runs of ${v}, so nothing was compared.`);
   const skilled = versions.filter((v) => v !== "none").flatMap((v) => rows[v]).filter((x) => x.reads);
   const read = skilled.filter((x) => x.reads.length).length;
   if (read < skilled.length / 2) flag(`WARN only ${read} of ${skilled.length} runs that had the skill read it, so these scores mostly measure the tool's own text. To measure the skill, rerun in a new eval folder with prompts that name it.`);
