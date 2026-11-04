@@ -7,7 +7,8 @@
 //         prints how many sessions it will start, calibrates the adapter, then runs every version, task and run.
 //         --model is passed to the adapter as EVAL_MODEL and keeps that model's runs in runs/<model>/, so one folder
 //         holds several models. Each run sets OBSERVE_TAGS="version=… task=… run=…" for observe.mjs.
-// Calibrate: node eval.mjs calibrate <dir> [--model <id>]   three short runs at once that the adapter must pass:
+// Calibrate: node eval.mjs calibrate <dir> [--model <id>] [--versions a,b]   three short runs at once, on a copy of
+//         the first listed version's front matter, that the adapter must pass:
 //         the agent quotes a line only its copy of the skill holds, says it has no skill when given none, and
 //         runs a shell command. With --model, each run must report that model.
 // Score:  node eval.mjs score <dir> [--model <id>] [--versions before,after] [--detail]   compares the first two
@@ -265,7 +266,7 @@ function score(dir) {
     console.log(line);
   };
   const models = opt("models")?.split(",");
-  const sources = models ? models.map((m) => [`${m.split("/").pop()}:`, join(dir, "runs", slug(m))]) : [["", runsDir(dir)]];
+  const sources = models ? models.map((m) => [`${m}:`, join(dir, "runs", slug(m))]) : [["", runsDir(dir)]];
   for (const [prefix, runs, name] of sources.flatMap(([p, r]) => (existsSync(r) ? readdirSync(r).sort().map((n) => [p, r, n]) : []))) {
     const out = join(runs, name);
     if (!existsSync(join(out, "result.json"))) continue;
@@ -302,7 +303,7 @@ function score(dir) {
     // "none" has no skill to read, so its reads cell is blank.
     const pair = (p, keep, f) => [B, A].map((v) => (v === "none" && f !== ok ? "–" : cell((rows[p + v] ?? []).filter(keep), f))).join("→");
     const line = (label, keep, f = ok) => console.log(`| ${label} | ${sources.map(([p]) => pair(p, keep, f)).join(" | ")} |`);
-    console.log(`\n| task | ${sources.map(([p]) => `${p.slice(0, -1)} ${B}→${A}`).join(" | ")} |\n|---|${sources.map(() => "---|").join("")}`);
+    console.log(`\n| task | ${sources.map(([p]) => `${p.slice(0, -1).split("/").pop()} ${B}→${A}`).join(" | ")} |\n|---|${sources.map(() => "---|").join("")}`);
     for (const id of Object.keys(tasks)) line(id, (x) => x.task === id);
     line("total", () => true);
     line("SKILL.md read", () => true, (x) => x.reads?.includes("SKILL.md"));

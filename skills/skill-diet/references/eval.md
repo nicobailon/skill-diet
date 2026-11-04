@@ -6,7 +6,7 @@
 
 ## Tasks
 
-10–15 one-line requests sampled from real session logs, including any case the user names or just used the skill for, each pointed at a fixture with its expected outcome. For a skill that guards a general tool such as a shell, count past calls by command and write requests for the common ones. Cover every case in the `SKILL.md` link list, one task per "don't" rule, and each risky area. First run each rule's bad command once the way the agent's tool runs it (for example stdin closed, no terminal): a rule that can't fail on this host gets no task, and its line is a cut candidate.
+10–15 one-line requests sampled from real session logs, including any case the user names or just used the skill for, each pointed at a fixture with its expected outcome. For a skill that guards a general tool such as a shell, count past calls by command and write requests for the common ones. Run each rule's bad command once the way the agent's tool runs it (for example stdin closed, no terminal): a rule that can't fail on this host gets no task, and its line is a cut candidate. Cover every other case in the `SKILL.md` link list, one task per "don't" rule, and each risky area.
 
 Send sub-work to the cheapest model; for a task that touches a real account, score what the agent writes instead of running it.
 
