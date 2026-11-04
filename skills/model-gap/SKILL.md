@@ -20,11 +20,11 @@ This runs skill-diet's eval: tasks and scoring per [eval.md](../skill-diet/refer
 
 ## 1. Measure the gap
 
-`base` and `none` on every model, tuning tasks, 3 runs. Score each model with `score <dir> --model <m> --versions none,base`. A gap is a task the target fails more often than the reference with a cause in its logs; 2/3 against 3/3 alone is noise. If the target does better with `none` (MISS or WORSE here), look for lines to cut first. No gap on any target → stop and report.
+`base` and `none` on every model, tuning tasks, 3 runs. `score <dir> --models <all> --versions none,base` puts the models side by side; `--model <m>` instead gives one model's warnings. A gap is a task the target fails more often than the reference with a cause in its logs; 2/3 against 3/3 alone is noise. If the target does better with `none` (MISS or WORSE here), look for lines to cut first. No gap on any target → stop and report.
 
 ## 2. Find the cause
 
-**Loading first.** Compare how many runs read `SKILL.md` on each model (`score`'s reads line; its under-half warning is this finding). If the target opens the skill much less often, fix loading before any rule: a description that says when to read the skill and what it adds to the tool's own description. If reads rise but passes don't, move the rules the target breaks into the description.
+**Loading first.** Compare how many runs read `SKILL.md` on each model (the `--models` table's last row; `score`'s under-half warning is this finding). If the target opens the skill much less often, fix loading before any rule: a description that says when to read the skill and what it adds to the tool's own description. If reads rise but passes don't, move the rules the target breaks into the description.
 
 Otherwise a fresh reviewer reads each failing target run beside a passing reference run of the same task, and labels one cause with quoted evidence:
 

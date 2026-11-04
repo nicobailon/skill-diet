@@ -16,6 +16,8 @@
 //         is lower by more than chance explains) or WARN (a run read the skill from outside sk/<version>, a task
 //         fails in every version or has runs but left tasks.json, under half the runs given the skill read it, or a
 //         compared version has no runs).
+//         --models a,b,c instead prints a task × model table of the two versions, cells "<before>→<after>", with
+//         totals and SKILL.md reads, and compares nothing.
 // Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and what it was tested with, and
 //         exits 1 on a relative link or #anchor that does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
@@ -33,7 +35,8 @@ const [command, target, ...flags] = process.argv.slice(2);
 const opt = (name, fallback) => (flags.includes(`--${name}`) ? flags[flags.indexOf(`--${name}`) + 1] : fallback);
 // Runs and calibration for --model live in runs/<model>/ and calibration/<model>/, with the id made safe for a folder
 // name, so models can run at once in one folder.
-const perModel = (dir, kind) => join(dir, kind, ...(opt("model") ? [opt("model").replace(/[^\w.-]+/g, "_")] : []));
+const slug = (model) => model.replace(/[^\w.-]+/g, "_");
+const perModel = (dir, kind) => join(dir, kind, ...(opt("model") ? [slug(opt("model"))] : []));
 const runsDir = (dir) => perModel(dir, "runs");
 
 // On a crash or Ctrl-C, stop the adapters still running and remove their work dirs. SIGTERM lets an adapter delete what
@@ -74,10 +77,11 @@ function skillFolder(dir, v) {
   return join(base, names[0]);
 }
 
-// The first version folder's skill; calibration copies its front matter and score finds reads by its folder name.
+// The first listed version's skill, or else any version's; calibration copies its front matter and score finds reads
+// by its folder name.
 function anySkill(dir) {
-  const versions = readdirSync(join(dir, "sk"), { withFileTypes: true }).filter((d) => d.isDirectory());
-  const skill = versions.map((d) => skillFolder(dir, d.name)).find(Boolean);
+  const versions = [...opt("versions", "before,after").split(","), ...readdirSync(join(dir, "sk"))];
+  const skill = versions.filter((v) => v !== "none" && existsSync(join(dir, "sk", v)) && statSync(join(dir, "sk", v)).isDirectory()).map((v) => skillFolder(dir, v))[0];
   if (!skill) throw new Error(`${join(dir, "sk")} holds no <version>/<skill>/ folder`);
   return skill;
 }
@@ -150,8 +154,8 @@ async function calibrate(dir) {
   const front = readFileSync(join(real, "SKILL.md"), "utf8").match(/^---\n[\s\S]*?\n---\n/)?.[0];
   if (!front) throw new Error(`${join(real, "SKILL.md")} has no front matter`);
   // A fresh line under the real skill's name and description: only the copy given to the adapter holds it, and an
-  // installed copy of the skill shows up in the run that gets none.
-  const canary = `CANARY-${Math.random().toString(36).slice(2, 10)}`;
+  // installed copy of the skill shows up in the run that gets none. A plain line: a model refused to quote "CANARY-…".
+  const canary = `Version ${Math.random().toString(36).slice(2, 10)}`;
   const base = perModel(dir, "calibration");
   rmSync(base, { recursive: true, force: true });
   const skill = join(base, "copy", name);
@@ -260,8 +264,10 @@ function score(dir) {
     flagged++;
     console.log(line);
   };
-  for (const name of existsSync(runsDir(dir)) ? readdirSync(runsDir(dir)).sort() : []) {
-    const out = join(runsDir(dir), name);
+  const models = opt("models")?.split(",");
+  const sources = models ? models.map((m) => [`${m.split("/").pop()}:`, join(dir, "runs", slug(m))]) : [["", runsDir(dir)]];
+  for (const [prefix, runs, name] of sources.flatMap(([p, r]) => (existsSync(r) ? readdirSync(r).sort().map((n) => [p, r, n]) : []))) {
+    const out = join(runs, name);
     if (!existsSync(join(out, "result.json"))) continue;
     const res = JSON.parse(readFileSync(join(out, "result.json"), "utf8"));
     const t = tasks[res.task];
@@ -286,8 +292,22 @@ function score(dir) {
     if (outside) flag(`WARN ${res.version}/${res.task}: read ${outside} from outside sk/${res.version}`);
     const tokens = res.tokens && res.tokens.input + res.tokens.output + res.tokens.cacheRead + res.tokens.cacheWrite;
     const ok = res.exit === 0 && res.check !== false && !missing.length && !banned.length;
-    (rows[res.version] ??= []).push({ ...res, ok, tokens, reads });
+    (rows[prefix + res.version] ??= []).push({ ...res, ok, tokens, reads });
     if (flags.includes("--detail") && !ok) console.log(`FAIL ${name}  missing=${JSON.stringify(missing)} banned=${JSON.stringify(banned)} exit=${res.exit} check=${res.check}`);
+  }
+  if (models) {
+    // One column per model and each cell <before>→<after>, so a gap and its fix read across one row.
+    const ok = (x) => x.ok;
+    const cell = (r, f) => (r.length ? `${r.filter(f).length}/${r.length}` : "–");
+    // "none" has no skill to read, so its reads cell is blank.
+    const pair = (p, keep, f) => [B, A].map((v) => (v === "none" && f !== ok ? "–" : cell((rows[p + v] ?? []).filter(keep), f))).join("→");
+    const line = (label, keep, f = ok) => console.log(`| ${label} | ${sources.map(([p]) => pair(p, keep, f)).join(" | ")} |`);
+    console.log(`\n| task | ${sources.map(([p]) => `${p.slice(0, -1)} ${B}→${A}`).join(" | ")} |\n|---|${sources.map(() => "---|").join("")}`);
+    for (const id of Object.keys(tasks)) line(id, (x) => x.task === id);
+    line("total", () => true);
+    line("SKILL.md read", () => true, (x) => x.reads?.includes("SKILL.md"));
+    if (flagged) process.exitCode = 1;
+    return;
   }
   const rank = (v) => ([B, A, "none"].includes(v) ? [B, A, "none"].indexOf(v) : 3);
   const versions = Object.keys(rows).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
