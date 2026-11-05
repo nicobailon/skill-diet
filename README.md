@@ -22,6 +22,12 @@ Ask your agent:
 > put this skill on a diet, and keep what we just did working
 ```
 
+## What's new in 0.2
+
+https://github.com/user-attachments/assets/a40a2e75-347b-4ef9-8419-ffa34beba909
+
+Most skills are written and tested on one top model, but many people run them on other models, where they can quietly fail. The new model-gap skill runs the same tasks on each model you use, finds why the weaker one fails, and keeps a fix only if it helps that model without hurting the others. In its first trial, one line in a skill's description took Kimi from 78% to 98% of runs passed and Haiku from 85% to 100%. See [below](#when-a-skill-works-worse-on-another-model) and the [changelog](CHANGELOG.md).
+
 ## How it works
 
 Each fact goes on the lowest level that still reaches the agent before it needs it:
