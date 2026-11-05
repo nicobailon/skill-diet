@@ -13,8 +13,5 @@
     "agent-skills",
     "token-budget",
     "docs"
-  ],
-  "skills": [
-    "./"
   ]
 }

@@ -13,12 +13,13 @@ The run must be fair:
 
 Write `<out-dir>/result.json`:
 
-    {"answer": "<final reply>", "tokens": {"input": n, "output": n, "cacheRead": n, "cacheWrite": n}, "turns": n or null, "calls": [{"name": "...", "path": "...", "command": "..."}]}
+    {"answer": "<final reply>", "tokens": {"input": n, "output": n, "cacheRead": n, "cacheWrite": n}, "turns": n or null, "calls": [{"name": "...", "path": "...", "command": "..."}], "model": "..."}
 
+- `model`: the model that served the session, as the agent's output reports it (not `$EVAL_MODEL`). Needed with `--model`.
 - `tokens`: the session's totals as the agent reports them. `input` excludes cached tokens. Don't add reasoning tokens to `output` unless the agent counts them separately; where the agent reports a total, check that the four numbers add up to it.
 - `turns`: the number of model requests (not user turns), or null when the agent doesn't report them.
 - `calls`: every tool call. File reads need `path` and shell commands need `command`; other calls need only `name`. Write any path into the skill under `<skill-dir>` as given. A skill loaded by name counts as reading `<skill-dir>/SKILL.md`, or `/<name>/SKILL.md` for any other skill.
 
-Keep the agent's raw output in `<out-dir>`. Exit 0 once `result.json` has the usage, even if the agent itself failed; exit non-zero when the output has no usage, which stops the eval. Delete anything you create outside `<out-dir>`, also when you get SIGTERM. Several runs happen at once, so runs must not share anything.
+Keep the agent's raw output in `<out-dir>`. Exit 0 once `result.json` has the usage, even if the agent itself failed; exit non-zero when the output has no usage, which stops the eval. Delete anything you create outside `<out-dir>`, also when you get SIGTERM. Several runs happen at once, so runs must not share anything. Give each its own `TMPDIR`; a task whose commands use fixed paths elsewhere (a `/tmp/…` log, `pkill -f` by name) runs alone, with `--tasks <id> --parallel 1`.
 
-`eval.mjs calibrate <dir>` must pass before an eval, and `run` checks it again each time. Each check's output is in `<dir>/calibration/`.
+`eval.mjs calibrate <dir>` must pass before an eval, and `run` checks it again each time. Each check's output is in `<dir>/calibration/`. Given no skill, some models search the whole disk for one; if the agent's shell has no timeout, stop any call that runs over a minute so calibration ends.

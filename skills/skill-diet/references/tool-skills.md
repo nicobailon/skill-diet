@@ -20,7 +20,7 @@ List names the tool rejects, parameters it accepts and ignores, public operation
 
 ### T3. Most-used calls
 
-Count real calls in session logs (see Logging calls) and group errors by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take what every task needs, and say so. For a native or MCP tool, also count how often agents open the skill; they often call the tool without reading it.
+Count real calls in session logs (see Logging calls) and group errors by message: a recurring error names a missing rule or a tool error to fix. The operations covering about 90% of calls form the cheat sheet. Without logs, take what every task needs, and say so. For a native or MCP tool, also count how often agents open the skill; they often call the tool without reading it. When they rarely do, have the description say to read the skill before the first call, and what it adds to the tool's own description.
 
 ### T4. Check the tool's help and errors
 
