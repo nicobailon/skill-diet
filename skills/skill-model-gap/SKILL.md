@@ -1,10 +1,10 @@
 ---
-name: model-gap
+name: skill-model-gap
 description: Find why a skill works worse on one model than another, and fix it without hurting the others. Give it the skill and the models to compare.
 disable-model-invocation: true
 ---
 
-# Model gap
+# Skill model gap
 
 A skill tested on one model (the **reference**) often passes fewer tasks on another (the **target**). Find where and why, fix it with text every model reads, and prove the target gains while no model drops.
 

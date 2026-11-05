@@ -22,6 +22,12 @@ Ask your agent:
 > put this skill on a diet, and keep what we just did working
 ```
 
+## What's new in 0.2
+
+https://github.com/user-attachments/assets/1ef523d5-fec8-4938-8e4a-702b52b99c8e
+
+Most skills are written and tested on one top model, but many people run them on other models, where they can quietly fail. The new skill-model-gap skill runs the same tasks on each model you pick, finds why the weaker one fails, and keeps a fix only if it helps that model without hurting the others. In its first trial, one line in a skill's description took Kimi from 78% to 98% of runs passed and Haiku from 85% to 100%. See [below](#when-a-skill-works-worse-on-another-model) and the [changelog](CHANGELOG.md).
+
 ## How it works
 
 Each fact goes on the lowest level that still reaches the agent before it needs it:
@@ -75,7 +81,7 @@ When code changes a name or behavior a skill describes, the skill is updated in 
 
 ## When a skill works worse on another model
 
-A skill written and tested with one model often does worse with another. The second skill in this repo, model-gap, runs the same tasks on each model, finds why the weaker one fails (it never opened the skill, misread a rule, hit a tool error, or the test itself was wrong), and tests one fix at a time. It keeps a fix only if it helps that model without hurting the others, judged on tasks no fix was tuned on. Only you start it (`/skill:model-gap <skill> <models>` in Pi, `/skill-diet:model-gap` in Claude Code), so it costs no context otherwise.
+A skill written and tested with one model often does worse with another. The second skill in this repo, skill-model-gap, runs the same tasks on each model, finds why the weaker one fails (it never opened the skill, misread a rule, hit a tool error, or the test itself was wrong), and tests one fix at a time. It keeps a fix only if it helps that model without hurting the others, judged on tasks no fix was tuned on. Only you start it (`/skill:skill-model-gap <skill> <models>` in Pi, `/skill-diet:skill-model-gap` in Claude Code), so it costs no context otherwise.
 
 In the first trial, on a skill for messaging between agent sessions, Kimi and Haiku rarely opened the skill. One change to its description fixed that:
 
@@ -111,9 +117,9 @@ Codex, Cursor and other agents:
 npx skills add nicobailon/skill-diet -g --skill '*'
 ```
 
-This keeps one copy of each skill in `~/.agents/skills`, linked into each agent you pick. Update with `npx skills update`. Use one route per agent; installing both loads the skills twice. model-gap runs skill-diet's scripts, so install the two together.
+This keeps one copy of each skill in `~/.agents/skills`, linked into each agent you pick. Update with `npx skills update`. Use one route per agent; installing both loads the skills twice. skill-model-gap runs skill-diet's scripts, so install the two together.
 
-To install by hand, clone the repo, then link `skills/skill-diet` and `skills/model-gap` into `~/.agents/skills/`, where Codex, Cursor and Pi read them, and into `~/.claude/skills/` for Claude Code.
+To install by hand, clone the repo, then link `skills/skill-diet` and `skills/skill-model-gap` into `~/.agents/skills/`, where Codex, Cursor and Pi read them, and into `~/.claude/skills/` for Claude Code.
 
 Releases and what changed in each are in [CHANGELOG.md](CHANGELOG.md).
 
@@ -135,7 +141,7 @@ skill-diet/
     │   └── scripts/
     │       ├── observe.mjs   wraps a CLI so every call an agent makes during the test is logged
     │       └── eval.mjs      checks your agent's adapter, then runs and scores the test, per model; checks a skill's links and prints its size
-    └── model-gap/
+    └── skill-model-gap/
         └── SKILL.md          finding and fixing why a skill works worse on one model
 ```
 
