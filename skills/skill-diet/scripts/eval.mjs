@@ -352,7 +352,7 @@ function score(dir) {
   } else for (const v of [B, A].filter((v) => !rows[v])) flag(`WARN ${runsDir(dir).slice(dir.length + 1)} has no runs of ${v}, so nothing was compared.`);
   const skilled = (opt("versions") ? [B, A] : versions).filter((v) => v !== "none" && rows[v]).flatMap((v) => rows[v]).filter((x) => x.reads);
   const read = skilled.filter((x) => x.reads.length).length;
-  if (read < skilled.length / 2) flag(`WARN only ${read} of ${skilled.length} runs that had the skill read it, so these scores mostly measure the tool's own text. To measure the skill, rerun in a new eval folder with prompts that name it. When comparing models, this is the loading gap model-gap fixes through the description.`);
+  if (read < skilled.length / 2) flag(`WARN only ${read} of ${skilled.length} runs that had the skill read it, so these scores mostly measure the tool's own text. To measure the skill, rerun in a new eval folder with prompts that name it. When comparing models, this is the loading gap skill-model-gap fixes through the description.`);
   for (const v of versions.filter((v) => v !== "none")) {
     const counts = {};
     for (const x of rows[v]) for (const p of x.reads ?? []) counts[p] = (counts[p] ?? 0) + 1;
