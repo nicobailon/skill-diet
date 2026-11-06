@@ -2,16 +2,17 @@
 
 # skill-diet
 
-**An agent skill that keeps other skills lean and correct.**
+**Agent skills that keep other skills lean, correct, and working on every model you run.**
 
 An agent reads a skill's whole `SKILL.md` every time it uses the skill. Most skills carry far more than a task needs: detail only some tasks use, things the model already knows, notes written for people rather than agents, and lists that one idea could replace. Skills that teach a tool (a CLI, an API, an SDK, an MCP server) also copy the tool's reference, and that copy goes stale as the tool changes. Asking an agent to update a skill usually makes it longer, since agents tend to add more than they cut.
 
 On real skills, a diet has cut 70–80% of the tokens with no drop in test results, and found commands the skill documented that no longer worked.
 
-skill-diet does two jobs:
+skill-diet does three jobs:
 
 - **Put a skill on a diet.** It rewrites the skill, fixes what no longer matches the tool, and keeps the slim version unless tests show agents doing worse with it.
 - **Keep it lean afterward.** It gives agents rules for every later update, so new lessons and code changes don't bring the bloat back.
+- **Make it work on other models.** A second skill, skill-model-gap, runs the same tasks on each model you pick, finds why a weaker one fails, and keeps a fix only if it helps that model without hurting the others. You start it yourself ([how](#when-a-skill-works-worse-on-another-model)).
 
 Ask your agent:
 
