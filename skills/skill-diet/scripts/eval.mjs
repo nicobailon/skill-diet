@@ -16,14 +16,14 @@
 //         errors. Exits 1 on any MISS (before passed a task on every run, after on none), WORSE (after's pass rate
 //         is lower by more than chance explains) or WARN (a run read the skill from outside sk/<version>, a task
 //         fails in every version or has runs but left tasks.json, under half the runs given the skill read it, or a
-//         compared version has no runs).
+//         compared version has fewer runs of a task than the other).
 //         --models a,b,c instead prints a task × model table of the two versions, cells "<before>→<after>", with
 //         totals and SKILL.md reads, and compares nothing.
 // Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and what it was tested with, and
 //         exits 1 on a relative link or #anchor that does not resolve.
 // Scoring removes quotes first, so `"$DIR/tool" main` matches `tool main`. `must` patterns match anywhere
-// in the agent's output; `must_not` patterns match only code-block lines that are not comments, so
-// "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
+// in the agent's output; `must_not` patterns match the commands the agent ran and code-block lines that are not
+// comments, so "I won't run X" passes. `setup`, the agent and `check` run in a temp work dir, deleted after `check`; `check`
 // must exit 0. observe.mjs logs only the agent's calls, not those of `setup` and `check`.
 // Finished runs are kept, so rerunning `run` only fills in missing ones. A timeout counts as a failed run; any other
 // adapter failure stops the eval.
@@ -285,11 +285,15 @@ function score(dir) {
         .join("\n"),
     );
     const missing = (t.must ?? []).filter((p) => !new RegExp(unquote(p), "i").test(text));
-    const banned = (t.must_not ?? []).filter((p) => new RegExp(unquote(p), "i").test(code));
+    const ran = unquote((res.calls ?? []).map((c) => c.command).filter(Boolean).join("\n"));
+    const banned = (t.must_not ?? []).filter((p) => new RegExp(unquote(p), "i").test(`${code}\n${ran}`));
     // Skill files the agent opened, from any sk/<version>/<skill>/, by path relative to the skill folder.
     const texts = (res.calls ?? []).flatMap((c) => [c.path, c.command]).filter(Boolean).map(String);
     const reads = res.calls && [...new Set(texts.flatMap((s) => [...s.matchAll(/\/sk\/[^/]+\/[^/\s'"]+\/([^\s'"`;|&)]+)/g)].map((m) => m[1])))];
-    const outside = texts.flatMap((s) => s.split(/[\s'"`;|&()]+/)).find((p) => p.includes(skillDir) && !p.includes(`/sk/${res.version}${skillDir}`));
+    // Another version's copy or an installed one (every host keeps skills under a skills/ folder), not a fixture
+    // that merely shares the skill's name, such as config/deploy/.
+    const copy = new RegExp(`/(sk/[^/]+|skills)${skillDir}|${skillDir}SKILL\\.md`);
+    const outside = texts.flatMap((s) => s.split(/[\s'"`;|&()]+/)).find((p) => copy.test(p) && !p.includes(`/sk/${res.version}${skillDir}`));
     if (outside) flag(`WARN ${res.version}/${res.task}: read ${outside} from outside sk/${res.version}`);
     const tokens = res.tokens && res.tokens.input + res.tokens.output + res.tokens.cacheRead + res.tokens.cacheWrite;
     const ok = res.exit === 0 && res.check !== false && !missing.length && !banned.length;
@@ -337,6 +341,8 @@ function score(dir) {
     if (runs.length && !runs.some((x) => x.ok)) flag(`WARN ${id} fails in every version, so it can't tell them apart. Fix it and rerun it in every version, or remove it and its runs.`);
     const before = rows[B]?.filter((x) => x.task === id) ?? [];
     const after = rows[A]?.filter((x) => x.task === id) ?? [];
+    if (rows[B] && rows[A] && before.length !== after.length)
+      flag(`WARN ${id}: ${B} has ${before.length} runs and ${A} ${after.length}, so the totals compare different tasks. Rerun \`run\` to fill in the missing ones.`);
     // Two equally good versions split all-vs-none by chance in at most 1 task in 64 at 3 runs, so a MISS is rerun first.
     if (before.length && after.length && before.every((x) => x.ok) && !after.some((x) => x.ok))
       flag(`MISS ${id}: ${B} passed every run and ${A} passed none. Rerun with --tasks ${id} --versions ${B},${A} --runs 6; if it still fails, its logs show what ${A} is missing.`);
