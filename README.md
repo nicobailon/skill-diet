@@ -120,7 +120,12 @@ Codex, Cursor and other agents:
 npx skills add nicobailon/skill-diet -g --skill '*'
 ```
 
-This keeps one copy of each skill in `~/.agents/skills`, linked into each agent you pick. Update with `npx skills update`. Use one route per agent; installing both loads the skills twice. skill-model-gap runs skill-diet's scripts, so install the two together.
+- `-g` installs for every project, not just the current folder.
+- `--skill '*'` installs both skills without asking you to pick. Keep them together: skill-model-gap runs skill-diet's scripts.
+
+It keeps one copy of each skill in `~/.agents/skills` and links it into each agent you choose. Update with `npx skills update`.
+
+Use one of these installs per agent. Installing into the same agent twice, such as Pi with both `pi install` and `npx skills`, loads every skill twice.
 
 To install by hand, clone the repo, then link `skills/skill-diet` and `skills/skill-model-gap` into `~/.agents/skills/`, where Codex, Cursor and Pi read them, and into `~/.claude/skills/` for Claude Code.
 
