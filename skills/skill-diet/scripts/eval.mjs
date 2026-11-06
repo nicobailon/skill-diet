@@ -16,7 +16,7 @@
 //         errors. Exits 1 on any MISS (before passed a task on every run, after on none), WORSE (after's pass rate
 //         is lower by more than chance explains) or WARN (a run read the skill from outside sk/<version>, a task
 //         fails in every version or has runs but left tasks.json, under half the runs given the skill read it, or a
-//         compared version has fewer runs of a task than the other).
+//         compared version has no runs, or fewer runs of a task than the other).
 //         --models a,b,c instead prints a task × model table of the two versions, cells "<before>→<after>", with
 //         totals and SKILL.md reads, and compares nothing.
 // Check:  node eval.mjs check <dir>   prints the size of each SKILL.md under <dir> and what it was tested with, and
@@ -278,21 +278,21 @@ function score(dir) {
     }
     const unquote = (s) => s.replace(/["']/g, "");
     const text = unquote(res.answer);
+    const commands = [...res.answer.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((m) => m[1]).concat((res.calls ?? []).map((c) => c.command).filter(Boolean));
     const code = unquote(
-      [...res.answer.matchAll(/```[^\n]*\n([\s\S]*?)```/g)]
-        .flatMap((m) => m[1].split("\n"))
+      commands
+        .flatMap((c) => String(c).split("\n"))
         .filter((l) => !/^\s*(#|\/\/)/.test(l))
         .join("\n"),
     );
     const missing = (t.must ?? []).filter((p) => !new RegExp(unquote(p), "i").test(text));
-    const ran = unquote((res.calls ?? []).map((c) => c.command).filter(Boolean).join("\n"));
-    const banned = (t.must_not ?? []).filter((p) => new RegExp(unquote(p), "i").test(`${code}\n${ran}`));
+    const banned = (t.must_not ?? []).filter((p) => new RegExp(unquote(p), "i").test(code));
     // Skill files the agent opened, from any sk/<version>/<skill>/, by path relative to the skill folder.
     const texts = (res.calls ?? []).flatMap((c) => [c.path, c.command]).filter(Boolean).map(String);
     const reads = res.calls && [...new Set(texts.flatMap((s) => [...s.matchAll(/\/sk\/[^/]+\/[^/\s'"]+\/([^\s'"`;|&)]+)/g)].map((m) => m[1])))];
-    // Another version's copy or an installed one (every host keeps skills under a skills/ folder), not a fixture
-    // that merely shares the skill's name, such as config/deploy/.
-    const copy = new RegExp(`/(sk/[^/]+|skills)${skillDir}|${skillDir}SKILL\\.md`);
+    // Another version's copy, or an installed one somewhere under a skills or plugins folder (hosts nest them in
+    // .system/, skills-cursor/, plugin caches…), not a fixture that merely shares the skill's name, such as config/deploy/.
+    const copy = new RegExp(`/sk/[^/]+${skillDir}|(skills|plugins).*${skillDir}|${skillDir}SKILL\\.md`);
     const outside = texts.flatMap((s) => s.split(/[\s'"`;|&()]+/)).find((p) => copy.test(p) && !p.includes(`/sk/${res.version}${skillDir}`));
     if (outside) flag(`WARN ${res.version}/${res.task}: read ${outside} from outside sk/${res.version}`);
     const tokens = res.tokens && res.tokens.input + res.tokens.output + res.tokens.cacheRead + res.tokens.cacheWrite;

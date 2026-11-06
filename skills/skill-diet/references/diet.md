@@ -1,6 +1,6 @@
 # Full diet
 
-Rewrite a whole skill onto [the levels](../SKILL.md#levels), then show agents do no worse with it.
+Rewrite a whole skill onto [the levels](../SKILL.md#levels), then test that agents don't do worse with it.
 
 ## 1. Baseline
 
