@@ -30,6 +30,8 @@ Most skills are written and tested on one top model, but many people run them on
 
 ## How it works
 
+https://github.com/user-attachments/assets/5ed957c3-bb1e-4916-80d1-ae081a1f84b7
+
 Each fact goes on the lowest level that still reaches the agent before it needs it:
 
 | Level | Holds | Read |
