@@ -11,6 +11,7 @@
 - **Skills that agents rarely open** get a description that says to read them before the first call of their tool.
 - **New layout:** both skills now live under `skills/`. If you cloned the repo into a skills folder by hand, link `skills/skill-diet` and `skills/skill-model-gap` instead.
 - **Skill managers see the version.** Each skill's front matter now lists its version and author under `metadata`, where skill managers such as asm look, and every release updates the version. Before, asm showed every install as 0.0.0 with no author. Thanks [@Qurtison](https://github.com/Qurtison) ([#23](https://github.com/nicobailon/skill-diet/pull/23)).
+- **Stricter scoring.** A `must_not` rule now also fails a run when the agent actually ran the banned command, not only when it wrote it in a code block. Opening a file in a fixture folder that shares the skill's name, such as `config/deploy/`, no longer counts as reading the skill from outside the eval. And `score` fails when the two versions have different numbers of runs of a task, which happens when a run was cut short. Reported by [@tarrific](https://github.com/tarrific) in [#22](https://github.com/nicobailon/skill-diet/issues/22).
 
 ## [0.1.0] - 2026-10-27
 

@@ -10,7 +10,7 @@ On real skills, a diet has cut 70–80% of the tokens with no drop in test resul
 
 skill-diet does two jobs:
 
-- **Put a skill on a diet.** It rewrites the skill, fixes what no longer matches the tool, and keeps the slim version only if agents do at least as well with it.
+- **Put a skill on a diet.** It rewrites the skill, fixes what no longer matches the tool, and keeps the slim version unless tests show agents doing worse with it.
 - **Keep it lean afterward.** It gives agents rules for every later update, so new lessons and code changes don't bring the bloat back.
 
 Ask your agent:
@@ -48,7 +48,7 @@ Each fact goes on the lowest level that still reaches the agent before it needs 
 2. If the skill teaches a tool, do the extra steps below.
 3. Place each piece on a level. If only you ever start the skill, it gets marked user-only, so its description stops costing context in every session.
 4. Cut what the model already knows and what only a human needs, then rewrite the rest tighter.
-5. Run agents on the same tasks with the old skill, the new one, and no skill at all, and keep the new one only if it does at least as well. Your agent can do all of this unattended: tasks are written before anything is cut, a fresh session settles disputed answers without seeing which version wrote them, and the scorer fails the diet if the new skill does worse than chance would explain.
+5. Run agents on the same tasks with the old skill, the new one, and no skill at all, and keep the new one unless it does worse. Your agent can do all of this unattended: tasks are written before anything is cut, a fresh session settles disputed answers without seeing which version wrote them, and the scorer fails the diet if the new skill does worse than chance would explain or never passes a task the old one always passed.
 
 For a skill that teaches a tool, the diet also:
 
