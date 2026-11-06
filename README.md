@@ -24,7 +24,7 @@ Ask your agent:
 
 ## What's new in 0.2
 
-https://github.com/user-attachments/assets/1ef523d5-fec8-4938-8e4a-702b52b99c8e
+https://github.com/user-attachments/assets/8dadf9d3-8987-48d3-9b22-c531b2c0454c
 
 Most skills are written and tested on one top model, but many people run them on other models, where they can quietly fail. The new skill-model-gap skill runs the same tasks on each model you pick, finds why the weaker one fails, and keeps a fix only if it helps that model without hurting the others. In its first trial, one line in a skill's description took Kimi from 78% to 98% of runs passed and Haiku from 85% to 100%. See [below](#when-a-skill-works-worse-on-another-model) and the [changelog](CHANGELOG.md).
 
