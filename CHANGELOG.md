@@ -10,6 +10,7 @@
 - **Skills record what they were tested with.** When an eval decides a ship, the skill's front matter lists every host and model it passed on and the date, so you can see whether it was tested on your model, and `check` prints the list. skill-model-gap uses it to know what to rerun when one of those models is replaced.
 - **Skills that agents rarely open** get a description that says to read them before the first call of their tool.
 - **New layout:** both skills now live under `skills/`. If you cloned the repo into a skills folder by hand, link `skills/skill-diet` and `skills/skill-model-gap` instead.
+- **Skill managers see the version.** Each skill's front matter now lists its version and author under `metadata`, where skill managers such as asm look, and every release updates the version. Before, asm showed every install as 0.0.0 with no author. Thanks [@Qurtison](https://github.com/Qurtison) ([#23](https://github.com/nicobailon/skill-diet/pull/23)).
 
 ## [0.1.0] - 2026-10-27
 
