@@ -2,6 +2,9 @@
 name: skill-model-gap
 description: Find why a skill works worse on one model than another, and fix it without hurting the others. Give it the skill and the models to compare.
 disable-model-invocation: true
+metadata:
+  version: 0.1.0
+  creator: Nico Bailon
 ---
 
 # Skill model gap

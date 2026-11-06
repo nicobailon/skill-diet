@@ -24,7 +24,7 @@
     "check": "node skills/skill-diet/scripts/eval.mjs check . && node tools/version.mjs --check",
     "preversion": "npm run check",
     "prepublishOnly": "npm run check",
-    "version": "node tools/version.mjs && git add .claude-plugin/plugin.json CHANGELOG.md"
+    "version": "node tools/version.mjs && git add .claude-plugin/plugin.json CHANGELOG.md skills/*/SKILL.md"
   },
   "pi": {
     "skills": [
